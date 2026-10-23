@@ -52,6 +52,15 @@
   (canonical skill + категория). Нормализация может идти пачками (batch) для экономии токенов.
 - **Aggregation**: предвычисленные агрегаты (SkillMap) по направлениям: частота, required
   experience, English, форматы. Пересчёт — при новой пачке вакансий, не на каждый запрос.
+- **Co-occurrence aggregation (skill gap, см. 06)**: детерминированный job — по окнам
+  7/30/90 считает `share(X|S)`, `lift(X|S)`, категорийные срезы (веса must=1.0 / nice=0.5);
+  кэш агрегатов (on-the-fly или предвычисление — TBD).
+- **Embedding + clustering service (фаза 2, опционально, gate из 06)**: эмбеддинги сигнатур
+  вакансий (title + взвешенные навыки) → HDBSCAN/K-Means → архетипы стеков; авто-лейблинг
+  по топ-навыкам (LLM/TF-IDF); матчинг центроидов между запусками для стабильности.
+- **Technology catalog**: каталог уровней (junior/middle/senior) по технологиям + ресурсы;
+  link-out на roadmap.sh/официальные доки (iframe заблокирован `X-Frame-Options: SAMEORIGIN`;
+  лицензия roadmap.sh разрешает только personal use — перепубликация запрещена; личный кэш — TBD).
 - **Matching engine**: профиль ↔ вакансия → совместимость (fit / almost-fit / no). Для
   almost-fit — вычисление «быстрых для освоения» навыков (required − profile, с весом
   востребованности). Критерии — TBD.

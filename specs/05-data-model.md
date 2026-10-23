@@ -75,15 +75,46 @@
 - `userId` (→ User), `provider` (TBD), `keyEncrypted` (зашифрованное значение), `keyHint`
   (для отображения, напр. «sk-…abc»), `createdAt`, `lastUsedAt`
 
+### SkillPairStat (пары навыков, основа share/lift)
+- `skillAId`, `skillBId` (→ Skill), `window` (enum: 7d/30d/90d)
+- `jobCountBoth`, `jobCountA` (вакансии с обоими / с A), `shareAtoB` (= P(B|A))
+- `lift` (сравнение с baseline), `weightMust`, `weightNice` (суммарные веса)
+- уникальность: (skillAId, skillBId, window)
+
+### SkillCategoryBaseline (baseline-частоты для lift)
+- `skillId` (→ Skill), `window`, `shareGlobal` (P(X) в окне), `jobCount`
+- уникальность: (skillId, window)
+
+### StackCombo (найденная комбинация, кандидат)
+- `skillIds` (JSON: список skillId), `metrics` (share, lift, count, avgExperience, salaryTier)
+- `gapTemplate` (JSON: типовой gap), `version`, `computedAt`
+- полезен для кэша/ML; в MVP может считаться on-the-fly (TBD)
+
+### Technology (каталог технологий)
+- `id`, `slug`, `name`, `category` (→ таксономия Skill), `description`
+- `levels` (JSON: junior/middle/senior — что учить)
+- `externalLinks` (JSON: roadmap.sh, official docs — только ссылки)
+
+### TechnologyResource (ресурсы технологии)
+- `technologyId` (→ Technology), `type` (enum: roadmap/official-docs/repo/course/article),
+  `url`, `title`, `level` (optional)
+
+### UserStack / SavedView (сохранённая выборка)
+- `userId` (→ User), `name`, `skillIds` (JSON), `window` (7d/30d/90d),
+  `weights` (must/nice), `supportThreshold`, `updatedAt`
+
 ## Связи (сводка)
 
 ```
 User 1─n Profile 1─n ProfileSkill n─1 Skill
 User 1─n ApiKey
 User 1─n Notification n─1 JobPosting
+User 1─n UserStack n─1 Skill
 JobPosting 1─n JobSkillRequirement n─1 Skill
 JobPosting 1─n MatchResult n─1 Profile
 Skill 1─n SkillAggregate
+Skill 1─n SkillPairStat (skillA/skillB)
+Technology 1─n TechnologyResource
 ```
 
 ## TBD
@@ -93,3 +124,7 @@ Skill 1─n SkillAggregate
 - `period` для агрегатов и стратегия пересчёта.
 - Формат `contacts` (фаза 5).
 - Режим шифрования ApiKey.
+- `SkillPairStat`: считать на лету vs предвычислять; как обрабатывать малые окна (7d).
+- `Technology.levels`: точный формат уровней и полей.
+- Кэш roadmap.sh в личном режиме (лицензия — personal use only).
+- Версионирование кластеров (фаза 2, ML-слой).
