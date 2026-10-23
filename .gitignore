@@ -1,0 +1,20 @@
+# Сырые данные скрейпа — не в репозитории
+cache/
+
+# Зависимости и сборка
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Окружение
+.env
+.env.local
+.env.*.local
+
+# Логи и редакторы
+*.log
+.DS_Store
+.idea/
+.vscode/
