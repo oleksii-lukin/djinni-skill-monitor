@@ -12,6 +12,7 @@
 | [04-architecture.md](04-architecture.md) | High-level архитектура | Draft |
 | [05-data-model.md](05-data-model.md) | Модель данных (сущности) | Draft |
 | [06-skill-gap-analysis.md](06-skill-gap-analysis.md) | Анализ комбинаций навыков и дефицита (skill gap) | Draft |
+| [design/](design/README.md) | Дизайн: промпты Stitch и макеты экранов (`design/ui-prompts.md`) | Draft |
 
 ## Ключевые решения (зафиксированы)
 
