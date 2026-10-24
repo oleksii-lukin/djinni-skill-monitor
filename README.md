@@ -51,6 +51,8 @@ pnpm export -- --window 30
 pnpm scrape -- --pages 5 --vacancies 25
 
 # 6. После доборов — снова stats/export и разбор реального кейса
+#    Несколько навыков объединяются по ИЛИ: вакансия в выборке, если содержит
+#    хотя бы один из них («мой стек» — не строгое требование комбинации)
 pnpm stats -- --skills React,TypeScript --window 30
 ```
 
@@ -67,7 +69,7 @@ pnpm stats -- --skills React,TypeScript --window 30
 | `pnpm parse` | Перепарсинг кэшированных detail-HTML без сети (после правок парсера/словаря) |
 | `pnpm check:fixtures` | Офлайн-проверка парсеров на семплах `cache/research/` |
 | `pnpm seed:skills` | Загрузка/обновление словаря навыков в БД |
-| `pnpm stats -- --skills React[,TypeScript] [--window 7\|30\|90] [--top N]` | share=P(X\|S), lift, пробелы, глобальные частоты |
+| `pnpm stats -- --skills React[,TypeScript] [--window 7\|30\|90] [--top N]` | share=P(X\|S), lift, пробелы, глобальные частоты; навыки объединяются по ИЛИ |
 | `pnpm export [-- --window N]` | Снапшот JSON + CSV (аналитическое представление) |
 | `pnpm db:studio` | Prisma Studio — просмотр БД |
 

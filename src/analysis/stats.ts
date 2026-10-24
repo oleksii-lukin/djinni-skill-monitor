@@ -2,8 +2,10 @@
 // pnpm stats -- --skills React --window 30
 // pnpm stats -- --skills React,TypeScript --window 90 --top 15
 //
-// Считает по окну (7/30/90 дней, фильтр по datePosted в БД):
-// - share(X|S) = P(X|S): доля вакансий с навыками S, где ещё встречается X;
+// Считает по окну (7/30/90 дней, фильтр по datePosted в БД).
+// Seed-навыки объединяются по ИЛИ: вакансия релевантна, если содержит хотя бы один
+// из них (решение 2026-10-24: пересечение по И сузило бы выборку до единиц).
+// - share(X|S) = P(X|S): доля вакансий, содержащих любой навык S, где ещё встречается X;
 // - lift = P(X|S) / P(X): «неожиданность» связи (выше = комбинация специфична);
 // - вес: must=1.0, nice=0.5 (nice-to-have вкладывается в половину).
 // Выдаёт пробелы (X ∉ S, отсортированы по share) — ответ на «чего мне не хватает».
@@ -72,17 +74,16 @@ for (const job of jobs) {
 
 const totalJobs = jobs.length;
 
-// Seed-множество: вакансии, содержащие ВСЕ навыки S (с порогом веса 0.3 — must или хотя бы nice)
+// Seed-множество: вакансии, содержащие ЛЮБОЙ из навыков S (объединение по ИЛИ —
+// «мой стек: подходит вакансия, где встречается хотя бы один из моих навыков»)
 const seedSets = seedSkills.map((s) => bySkill.get(s) ?? []);
-if (seedSets.some((set) => set.length === 0)) {
-  const empty = seedSkills.filter((_, i) => seedSets[i].length === 0);
-  console.warn(`[stats] за окном нет вакансий с: ${ce.yellow(empty.join(", "))} — результат будет пуст`);
+if (seedSets.every((set) => set.length === 0)) {
+  console.warn(`[stats] за окном нет вакансий с ${ce.yellow("ни одним из")}: ${ce.yellow(seedSkills.join(", "))}`);
 }
 
-const seedJobIds = new Set(seedSets[0]?.map((w) => w.jobId) ?? []);
-for (const set of seedSets.slice(1)) {
-  const ids = new Set(set.map((w) => w.jobId));
-  for (const id of [...seedJobIds]) if (!ids.has(id)) seedJobIds.delete(id);
+const seedJobIds = new Set<number>();
+for (const set of seedSets) {
+  for (const w of set) seedJobIds.add(w.jobId);
 }
 
 // Взвешенная сумма по seed-вакансиям (для средних показателей)
@@ -90,7 +91,7 @@ const seedJobIdList = [...seedJobIds];
 const seedCount = seedJobIdList.length;
 
 if (seedCount === 0) {
-  console.log("[stats] пересечение seed-навыков пусто — расширь окно или смени навыки");
+  console.log("[stats] с вашими навыками вакансий нет в окне — расширь окно или смени навыки");
   process.exit(0);
 }
 
@@ -140,10 +141,10 @@ for (const [skillName, weights] of bySkill) {
 gapCandidates.sort((a, b) => b.share - a.share);
 
 // ---------- Вывод ----------
-console.log(`\n${c.bold(`=== ${seedSkills.join(" + ")} — окно ${windowDays} дн. ===`)}`);
-console.log(`Вакансий в окне: ${totalJobs}; с вашим стеком: ${c.bold(String(seedCount))} (${c.bold(((seedCount / totalJobs) * 100).toFixed(1))}% рынка)`);
+console.log(`\n${c.bold(`=== ${seedSkills.join(" | ")} — окно ${windowDays} дн. ===`)}`);
+console.log(`Вакансий в окне: ${totalJobs}; со стеком (ИЛИ): ${c.bold(String(seedCount))} (${c.bold(((seedCount / totalJobs) * 100).toFixed(1))}% рынка)`);
 
-console.log(`\n${c.bold(`--- Топ-${topN} навыков рядом с вашим стеком (share = P(X|S)) ---`)}`);
+console.log(`\n${c.bold(`--- Топ-${topN} навыков рядом с вашим стеком (share = P(X|S), ИЛИ) ---`)}`);
 console.log("Скилл                  share  lift  вакансий  must%  ср.опыт");
 for (const g of gapCandidates.slice(0, topN)) {
   const shareStr = `${(g.share * 100).toFixed(0)}%`.padStart(4);
