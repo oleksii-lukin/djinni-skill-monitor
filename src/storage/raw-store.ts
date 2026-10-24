@@ -19,6 +19,10 @@ export interface ListCacheStateData {
   ids: number[];
   pagesFetched: number;
   fetchedAt: Date;
+  /** sha256 списка категорий фильтра (undefined/null у старых записей — до фильтра). */
+  filterFingerprint?: string | null;
+  /** Общий счётчик djinni на момент сбора (256); ids.length >= totalCount → список полон. */
+  totalCount?: number | null;
 }
 
 export interface RawStore {
@@ -120,14 +124,29 @@ class DbRawStore implements RawStore {
 
   async getListState(): Promise<ListCacheStateData | null> {
     const row = await prisma.listCacheState.findUnique({ where: { id: 1 } });
-    return row ? { ids: row.ids, pagesFetched: row.pagesFetched, fetchedAt: row.fetchedAt } : null;
+    return row
+      ? {
+          ids: row.ids,
+          pagesFetched: row.pagesFetched,
+          fetchedAt: row.fetchedAt,
+          filterFingerprint: row.filterFingerprint,
+          totalCount: row.totalCount,
+        }
+      : null;
   }
 
   async saveListState(state: ListCacheStateData): Promise<void> {
+    const data = {
+      ids: state.ids,
+      pagesFetched: state.pagesFetched,
+      fetchedAt: state.fetchedAt,
+      filterFingerprint: state.filterFingerprint ?? null,
+      totalCount: state.totalCount ?? null,
+    };
     await prisma.listCacheState.upsert({
       where: { id: 1 },
-      create: { id: 1, ...state },
-      update: state,
+      create: { id: 1, ...data },
+      update: data,
     });
   }
 }
@@ -177,15 +196,31 @@ class FsRawStore implements RawStore {
       .readFile(path.join(config.cacheDir, "list-state.json"), "utf8")
       .catch(() => null);
     if (raw === null) return null;
-    const state = JSON.parse(raw) as { ids: number[]; pagesFetched: number; fetchedAt: string };
-    return { ids: state.ids, pagesFetched: state.pagesFetched, fetchedAt: new Date(state.fetchedAt) };
+    const state = JSON.parse(raw) as {
+      ids: number[];
+      pagesFetched: number;
+      fetchedAt: string;
+      filterFingerprint?: string | null;
+      totalCount?: number | null;
+    };
+    return {
+      ids: state.ids,
+      pagesFetched: state.pagesFetched,
+      fetchedAt: new Date(state.fetchedAt),
+      filterFingerprint: state.filterFingerprint ?? null,
+      totalCount: state.totalCount ?? null,
+    };
   }
 
   async saveListState(state: ListCacheStateData): Promise<void> {
     await fs.mkdir(config.cacheDir, { recursive: true });
     await fs.writeFile(
       path.join(config.cacheDir, "list-state.json"),
-      JSON.stringify(state, null, 2),
+      JSON.stringify(
+        { ...state, filterFingerprint: state.filterFingerprint ?? null, totalCount: state.totalCount ?? null },
+        null,
+        2,
+      ),
       "utf8",
     );
   }

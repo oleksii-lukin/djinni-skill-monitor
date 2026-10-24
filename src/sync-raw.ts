@@ -56,8 +56,20 @@ async function main(): Promise<void> {
   // Состояние кэша списка (если есть)
   const stateRaw = await fs.readFile(path.join(config.cacheDir, "list-state.json"), "utf8").catch(() => null);
   if (stateRaw !== null) {
-    const state = JSON.parse(stateRaw) as { ids: number[]; pagesFetched: number; fetchedAt: string };
-    await store.saveListState({ ids: state.ids, pagesFetched: state.pagesFetched, fetchedAt: new Date(state.fetchedAt) });
+    const state = JSON.parse(stateRaw) as {
+      ids: number[];
+      pagesFetched: number;
+      fetchedAt: string;
+      filterFingerprint?: string | null;
+      totalCount?: number | null;
+    };
+    await store.saveListState({
+      ids: state.ids,
+      pagesFetched: state.pagesFetched,
+      fetchedAt: new Date(state.fetchedAt),
+      filterFingerprint: state.filterFingerprint ?? null,
+      totalCount: state.totalCount ?? null,
+    });
     console.log(`[sync] list-state.json → сторедж ${c.green("OK")} (${state.ids.length} ids)`);
   }
 

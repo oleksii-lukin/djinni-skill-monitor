@@ -9,6 +9,31 @@ function intEnv(name: string, def: number): number {
   return n;
 }
 
+// Дефолтный набор категорий фильтра «Розробка» (ключи djinni primary_keyword).
+// Соответствует выбору в UI: JavaScript / Front-End (все дочерние), Fullstack,
+// Node.js, No Code, React Native — без фильтра даёт ~6135 вакансий, с ним ~256.
+const DEFAULT_FILTER_KEYWORDS = [
+  "JavaScript",
+  "Angular",
+  "Markup",
+  "React.js",
+  "Svelte",
+  "Vue.js",
+  "Fullstack",
+  "Node.js",
+  "No Code",
+  "React Native",
+];
+
+function listEnv(name: string, def: string[]): string[] {
+  const v = process.env[name];
+  if (v === undefined) return def;
+  if (v.trim() === "" || v.trim().toLowerCase() === "none") return []; // пусто/"none" — без фильтра
+  const list = v.split(",").map((s) => s.trim()).filter((s) => s !== "");
+  if (list.length === 0) throw new Error(`Некорректный ${name}: ${v}`); // напр. «,,,»
+  return list;
+}
+
 function boolEnv(name: string, def: boolean): boolean {
   const v = process.env[name];
   if (v === undefined || v === "") return def;
@@ -30,6 +55,12 @@ export const config = {
   // Дефолтные лимиты одного запуска (CLI переопределяет)
   defaultPages: intEnv("SCRAPE_DEFAULT_PAGES", 5), // страниц списка за запуск
   defaultVacancies: intEnv("SCRAPE_DEFAULT_VACANCIES", 5), // detail-страниц за запуск
+
+  // Фильтр списка: категории «Розробка» через повторяющиеся primary_keyword (GET).
+  // Дефолт — набор из DEFAULT_FILTER_KEYWORDS; "none"/пусто в env — без фильтра.
+  filter: {
+    primaryKeywords: listEnv("FILTER_PRIMARY_KEYWORDS", DEFAULT_FILTER_KEYWORDS),
+  },
 
   // TTL кэша
   listTtlDays: intEnv("LIST_TTL_DAYS", 1), // список валиден 1 день, инвалидирует все страницы

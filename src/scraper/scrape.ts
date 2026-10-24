@@ -9,6 +9,7 @@
 // Лимиты одного запуска: --pages (страниц списка, default 5) и
 // --vacancies (detail-страниц, default 5).
 import { config } from "../config.js";
+import { createHash } from "node:crypto";
 import { prisma } from "../db.js";
 import { parseListPage } from "../parser/parse-list.js";
 import { parseDetailPage, type ParsedDetail } from "../parser/parse-detail.js";
@@ -25,37 +26,82 @@ export interface ScrapeRunOptions {
   listTtlDays?: number;
   detailTtlDays?: number;
   dryRun?: boolean; // не писать в БД/кэш, только отчёт
+  /** Категории фильтра (primary_keyword); дефолт — config.filter.primaryKeywords (CLI --keywords переопределяет). */
+  primaryKeywords?: string[];
+}
+
+/**
+ * Fingerprint списка категорий фильтра (sha256 от отсортированного списка).
+ * Сохраняется в ListCacheState: смена фильтра делает кэш списка устаревшим,
+ * т.к. набор ids другой. Сортировка делает его инвариантным к порядку в env.
+ */
+export function listFilterFingerprint(keywords: string[]): string {
+  const canonical = [...keywords].map((k) => k.trim()).sort().join("\n");
+  return createHash("sha256").update(canonical).digest("hex").slice(0, 16);
+}
+
+/** URL страницы списка с фильтром: повторяющиеся primary_keyword (мультивыбор категории djinni). */
+export function buildListUrl(page: number, keywords: string[]): string {
+  const parts: string[] = [];
+  if (keywords.length > 0) parts.push("search_type=basic-search");
+  for (const kw of keywords) parts.push(`primary_keyword=${encodeURIComponent(kw)}`);
+  parts.push(`page=${page}`);
+  return `${config.baseUrl}/jobs/?${parts.join("&")}`;
 }
 
 export async function runScrape(opts: ScrapeRunOptions): Promise<void> {
   const listTtlDays = opts.listTtlDays ?? config.listTtlDays;
   const detailTtlDays = opts.detailTtlDays ?? config.detailTtlDays;
+  const primaryKeywords = opts.primaryKeywords ?? config.filter.primaryKeywords;
+  const filterFp = listFilterFingerprint(primaryKeywords);
+  console.log(
+    primaryKeywords.length > 0
+      ? `[scrape] фильтр категорий (${primaryKeywords.length}): ${c.bold(primaryKeywords.join(", "))}`
+      : `[scrape] фильтр категорий ${c.yellow("выключен")} — обход всех вакансий`,
+  );
 
   const tracker = await RunTracker.start("SCRAPE_RUN");
   const fetcher = new RateLimitedFetcher(() => tracker.countRequest());
   const store = createRawStore();
 
   try {
-    // Этап 1: список страниц (TTL 1 день — инвалидирует все страницы разом)
+    // Этап 1: список страниц (TTL 1 день — инвалидирует все страницы разом;
+    // смена фильтра тоже делает кэш устаревшим — проверка по fingerprint)
     const listState = await store.getListState();
     const listAgeDays = listState
       ? (Date.now() - listState.fetchedAt.getTime()) / 86_400_000
       : Infinity;
+    const sameFilter = (listState?.filterFingerprint ?? null) === filterFp;
+    // Список «полон»: в кэше уже все вакансии (ids.length >= totalCount) —
+    // при любом --pages кэш-хит, перекачивать нечего.
+    const listComplete =
+      listState?.totalCount != null && listState.ids.length >= listState.totalCount;
     let discoveredIds: number[] = [];
 
-    if (listState && listAgeDays < listTtlDays && opts.pages <= listState.pagesFetched) {
+    if (
+      listState &&
+      listAgeDays < listTtlDays &&
+      sameFilter &&
+      (opts.pages <= listState.pagesFetched || listComplete)
+    ) {
       // Список свежий — страницы из кэша, без запросов
+      const completeNote = listComplete
+        ? c.dim(`, список полный: ${listState.ids.length}/${listState.totalCount}`)
+        : "";
       console.log(
-        `[scrape] список свежий ${c.dim(`(${listAgeDays.toFixed(2)} дн. < ${listTtlDays})`)} — ` +
+        `[scrape] список свежий ${c.dim(`(${listAgeDays.toFixed(2)} дн. < ${listTtlDays})`)}${completeNote} — ` +
           `берём ids из кэша страниц, запросов не делаем`,
       );
       tracker.countPageCacheHit();
       discoveredIds = listState.ids;
     } else {
+      if (listState && !sameFilter) {
+        console.log(`[scrape] ${c.yellow("фильтр изменился")} — кэш списка устарел, перекачиваем все страницы`);
+      }
       console.log(
         `[scrape] обход ${c.bold(String(opts.pages))} страниц списка ${c.dim(`(TTL ${listTtlDays} дн.)`)}…`,
       );
-      discoveredIds = await scrapeListPages(fetcher, tracker, store, opts);
+      discoveredIds = await scrapeListPages(fetcher, tracker, store, opts, primaryKeywords, filterFp);
     }
 
     // Этап 2: detail-очередь — новые/просроченные/изменённые
@@ -85,18 +131,28 @@ async function scrapeListPages(
   tracker: RunTracker,
   store: RawStore,
   opts: ScrapeRunOptions,
+  keywords: string[],
+  filterFp: string,
 ): Promise<number[]> {
-  const ids: number[] = [];
+  const seenAll = new Set<number>(); // дедупликация ids через страницы
   let newCount = 0;
   let updatedCount = 0;
+  let pagesFetched = 0; // фактически обработанные страницы (для state)
+  let expectedTotal: number | undefined;
 
   for (let page = 1; page <= opts.pages; page++) {
-    const url = `${config.baseUrl}/jobs/?page=${page}`;
+    const url = buildListUrl(page, keywords);
     console.log(`[scrape] GET ${c.blue(url)}`);
     const html = await fetcher.fetch(url);
     tracker.countPageFetched();
 
-    const { items, jsonLdCount } = parseListPage(html, url);
+    const { items, jsonLdCount, totalCount } = parseListPage(html, url);
+    if (page === 1) {
+      expectedTotal = totalCount;
+      if (totalCount !== undefined) {
+        console.log(`[scrape] всего вакансий${keywords.length > 0 ? " с фильтром" : ""}: ${c.bold(String(totalCount))}`);
+      }
+    }
     if (items.length === 0) {
       console.warn(`[scrape] страница ${page}: 0 вакансий ${ce.dim(`(jsonLd=${jsonLdCount})`)} — возможно, конец списка`);
       break;
@@ -108,24 +164,54 @@ async function scrapeListPages(
       rawRef = await store.put("LIST", `page-${page}`, url, html);
     }
 
+    let pageNewIds = 0;
     for (const item of items) {
-      ids.push(item.id);
-      if (opts.dryRun) continue;
+      const isNewId = !seenAll.has(item.id);
+      if (isNewId) {
+        seenAll.add(item.id);
+        pageNewIds++;
+      }
+      if (opts.dryRun || !isNewId) continue; // повтор уже обработан в этом запуске
       const { isNew } = await upsertJobFromList(item, rawRef);
       if (isNew) newCount++;
       else updatedCount++;
     }
+    pagesFetched = page;
 
-    console.log(`[scrape] страница ${page}: ${c.green(String(items.length))} вакансий ${c.dim(`(всего ids: ${ids.length})`)}`);
+    console.log(
+      `[scrape] страница ${page}: ${c.green(String(items.length))} вакансий ${c.dim(`(уникальных: ${seenAll.size}${expectedTotal !== undefined ? ` из ${expectedTotal}` : ""})`)}`,
+    );
+
+    // Стоп-критерии конца списка: djinni за концом отдаёт не пустые, а ПОВТОРЯЮЩИЕСЯ
+    // страницы (page-19 = page-20), поэтому одной проверки пустой страницы недостаточно.
+    if (expectedTotal !== undefined && seenAll.size >= expectedTotal) {
+      const pageWord = page % 10 >= 2 && page % 10 <= 4 && !(page % 100 >= 12 && page % 100 <= 14) ? "ы" : "";
+      console.log(
+        `[scrape] конец списка: ${c.bold(String(seenAll.size))} вакансий собрано за ${page} страниц${pageWord}`,
+      );
+      break;
+    }
+    if (pageNewIds === 0) {
+      console.warn(
+        `[scrape] страница ${page}: ${ce.yellow("0 новых ids")} — djinni повторяет уже собранный контент, выходим из списка`,
+      );
+      break;
+    }
   }
 
   if (!opts.dryRun) {
     tracker.countJobsNew(newCount);
     tracker.countJobsUpdated(updatedCount);
-    await store.saveListState({ ids, pagesFetched: opts.pages, fetchedAt: new Date() });
+    await store.saveListState({
+      ids: [...seenAll],
+      pagesFetched,
+      fetchedAt: new Date(),
+      filterFingerprint: filterFp,
+      totalCount: expectedTotal ?? null,
+    });
   }
 
-  return ids;
+  return [...seenAll];
 }
 
 // ---------- Этап 2: detail-страницы ----------

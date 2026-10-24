@@ -75,7 +75,27 @@ pnpm stats -- --skills React,TypeScript --window 30
 | `pnpm db:studio` | Prisma Studio — просмотр БД |
 
 Флаги скрейпера: `--pages` (default 5), `--vacancies` (default 5), `--list-ttl-days`
-(default 1), `--detail-ttl-days` (default 7), `--dry-run`.
+(default 1), `--detail-ttl-days` (default 7), `--keywords <список|none>` (категории
+фильтра на один запуск), `--dry-run`.
+
+## Фильтр категорий («Розробка»)
+
+Список обходится с фильтром категорий djinni — повторяющимися GET-параметрами
+`primary_keyword` (мультивыбор из категории фильтра на сайте). Это сузит ~6135
+вакансий всего сайта до ~256 в выбранном наборе:
+
+```bash
+# дефолтный набор (env не задан): JavaScript + Angular, Markup, React.js, Svelte, Vue.js,
+# Fullstack, Node.js, No Code, React Native
+FILTER_PRIMARY_KEYWORDS="..."   # .env: список через запятую; "none" или пусто — без фильтра
+pnpm scrape -- --keywords React.js,Fullstack   # разовый оверрайд без правки .env
+```
+
+Смена фильтра инвалидирует кэш списка (fingerprint в `ListCacheState` / `list-state.json`).
+Если в кэше собран полный список (`ids >= totalCount`, напр. 256/256), повторные прогоны в
+течение TTL с любым `--pages` идут из кэша без запросов. В логе прогона печатается активный
+набор категорий, общий счётчик «всего вакансий с фильтром» (контроль против 256 на сайте)
+и выход из обхода по достижении конца списка (djinni за концом отдаёт повторяющиеся страницы).
 
 ## Защита от перегрузки djinni.co
 

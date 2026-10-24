@@ -182,11 +182,16 @@ model RawHtmlPage {
 }
 
 // Состояние кэша страниц списка (аналог cache/list-state.json, одна строка).
+// filterFingerprint — sha256 списка категорий фильтра: смена фильтра делает кэш устаревшим.
+// totalCount — общий счётчик djinni (напр. 256): ids.length >= totalCount → список полон,
+// повторные прогоны с любым --pages идут из кэша.
 model ListCacheState {
-  id           Int      @id @default(1)
-  ids          Int[]
-  pagesFetched Int
-  fetchedAt    DateTime
+  id                Int      @id @default(1)
+  ids               Int[]
+  pagesFetched      Int
+  fetchedAt         DateTime
+  filterFingerprint String?
+  totalCount        Int?
 }
 
 model RunLog {

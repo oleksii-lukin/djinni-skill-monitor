@@ -31,6 +31,8 @@ export interface ParsedListItem {
 export interface ListPageResult {
   items: ParsedListItem[];
   jsonLdCount: number;
+  /** Общий счётчик «Вакансії» из заголовка страницы (с фильтром, напр. 256; без — ~6135). */
+  totalCount?: number;
 }
 
 export function parseListPage(html: string, sourceUrl: string): ListPageResult {
@@ -66,7 +68,12 @@ export function parseListPage(html: string, sourceUrl: string): ListPageResult {
     items.push(item);
   });
 
-  return { items, jsonLdCount: jsonLdById.size };
+  // Общий счётчик: <header><h1>Вакансії на Djinni</h1><span class="fs-1 …">6135</span>
+  const countRaw = $("header h1").first().next("span").text().trim();
+  const parsedCount = Number.parseInt(countRaw.replace(/\s+/g, ""), 10);
+  const totalCount = Number.isFinite(parsedCount) ? parsedCount : undefined;
+
+  return { items, jsonLdCount: jsonLdById.size, totalCount };
 }
 
 function parseJobItem(
