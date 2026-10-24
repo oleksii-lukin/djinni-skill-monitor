@@ -10,14 +10,18 @@
     "scrape": "tsx src/scraper/run.ts",
     "parse": "tsx src/parser/run-parse.ts",
     "raw:sync": "tsx src/sync-raw.ts",
+    "extract:llm": "tsx src/skills/run-extract-llm.ts",
     "check:fixtures": "tsx src/parser/check-fixtures.ts",
     "export": "tsx src/analysis/export.ts",
     "stats": "tsx src/analysis/stats.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.0",
     "@prisma/client": "^6.2.1",
+    "ai": "^7.0.0",
     "cheerio": "^1.0.0",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",

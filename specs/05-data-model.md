@@ -8,7 +8,8 @@
 > `JobPosting`, `Skill`, `JobSkillRequirement`, `RunLog` — **без `userId`** (профильная
 > надстройка отдельная система, см. `specs/implementation/0001-market-pipeline.md`).
 > `Skill.aliases` — Postgres массив строк; `Skill.category` — enum; `SkillSource` — enum
-> (`DJINNI_STRUCTURED` / `DJINNI_EXTRA` / `DESCRIPTION_KEYWORD`). `SkillPairStat`,
+> (`DJINNI_STRUCTURED` / `DJINNI_EXTRA` / `DESCRIPTION_KEYWORD` / `LLM_DESCRIPTION` —
+> добавлено ADR 0002). `SkillPairStat`,
 > `SkillCategoryBaseline`, `StackCombo` — агрегаты, в F1 не создаются: считаются on-the-fly
 > (`pnpm stats`) и экспортируются снапшотами.
 

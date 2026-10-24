@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "RunType" ADD VALUE 'EXTRACT_LLM';
+
+-- AlterEnum
+ALTER TYPE "SkillSource" ADD VALUE 'LLM_DESCRIPTION';

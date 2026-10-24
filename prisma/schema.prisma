@@ -48,11 +48,12 @@ enum SkillCategory {
   OTHER
 }
 
-// Источник извлечения навыка (приоритет: structured > extra > description_keyword)
+// Источник извлечения навыка (приоритет: structured > extra > description_keyword > llm)
 enum SkillSource {
   DJINNI_STRUCTURED // блок «Необхідний досвід з навичками» (детальная страница)
   DJINNI_EXTRA // доп. навыки через запятую + свёрнутые more_skills_exp
   DESCRIPTION_KEYWORD // словарное сопоставление по тексту описания (самый шумный)
+  LLM_DESCRIPTION // LLM по тексту описания, когда 3 детерминированных слоя дали < порога (ADR 0002)
 }
 
 enum RunType {
@@ -60,6 +61,7 @@ enum RunType {
   SCRAPE_DETAIL
   SCRAPE_RUN
   PARSE_CACHED
+  EXTRACT_LLM
   ANALYSIS_EXPORT
   ANALYSIS_STATS
 }

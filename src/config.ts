@@ -9,6 +9,14 @@ function intEnv(name: string, def: number): number {
   return n;
 }
 
+function boolEnv(name: string, def: boolean): boolean {
+  const v = process.env[name];
+  if (v === undefined || v === "") return def;
+  if (v === "1" || v.toLowerCase() === "true") return true;
+  if (v === "0" || v.toLowerCase() === "false") return false;
+  throw new Error(`Некорректный ${name}: ${v} (ожидается 0/1)`);
+}
+
 export const config = {
   baseUrl: "https://djinni.co",
 
@@ -37,7 +45,32 @@ export const config = {
 
   // Сторедж сырого HTML: db — таблица RawHtmlPage (общий кэш), fs — файлы (фолбэк)
   rawStore: (process.env.RAW_STORE === "fs" ? "fs" : "db") as "db" | "fs",
+
+  // LLM-слой экстракции (ADR 0002): один OpenAI-совместимый фасад —
+  // OpenCode Zen (https://opencode.ai/zen/v1), OpenRouter, OpenAI, Gemini
+  // (OpenAI-compat) или локальный LM Studio (http://localhost:1234/v1).
+  llm: {
+    enabled: boolEnv("LLM_ENABLED", false), // выключен по умолчанию: без ключа всё работает как раньше
+    baseUrl: process.env.LLM_BASE_URL ?? "https://opencode.ai/zen/v1",
+    apiKey: process.env.LLM_API_KEY ?? "",
+    model: process.env.LLM_MODEL ?? "deepseek-v4-flash-free",
+    threshold: intEnv("LLM_EXTRACT_THRESHOLD", 1), // вызывать LLM, если после 3 слоёв навыков < N
+    concurrency: intEnv("LLM_CONCURRENCY", 3), // параллельные LLM-запросы (2–4)
+    maxAttempts: intEnv("LLM_MAX_ATTEMPTS", 2), // попыток на одну вакансию (сеть/невалидный JSON)
+    timeoutMs: intEnv("LLM_TIMEOUT_MS", 60_000),
+    maxDescriptionChars: intEnv("LLM_MAX_DESC_CHARS", 8000), // усечение описания в промпт
+    // true → response_format json_schema (так принимает LM Studio);
+    // false → json_object (нужно некоторым шлюзам: Zen/OpenRouter/старые OpenAI-совместимые)
+    structuredOutputs: boolEnv("LLM_STRUCTURED_OUTPUTS", true),
+  },
 } as const;
+
+if (config.llm.enabled && config.llm.apiKey === "") {
+  throw new Error(
+    "LLM_ENABLED=1, но LLM_API_KEY пуст — создай ключ (opencode.ai/auth для Zen) " +
+      "или укажи любую непустую строку для LM Studio",
+  );
+}
 
 if (config.delayMaxMs < config.delayMinMs) {
   throw new Error(

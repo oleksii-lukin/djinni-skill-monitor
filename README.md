@@ -10,7 +10,7 @@
 
 - Node.js 20+, TypeScript, tsx (запуск TS без сборки)
 - PostgreSQL 16 (Docker Compose, порт 5433) + Prisma
-- cheerio — детерминированный парсинг HTML; LLM-слой добавляется позже
+- cheerio — детерминированный парсинг HTML; AI SDK (`ai`) — опциональный LLM-слой извлечения
 
 Версия Node закреплена для volta в `package.json` (`"volta": { "node": "24.22.0" }`) —
 при наличии volta проект автоматически использует её; иначе нужен Node ≥ 20.
@@ -67,6 +67,7 @@ pnpm stats -- --skills React,TypeScript --window 30
 | `pnpm scrape -- --pages N --vacancies N` | Сбор: N страниц списка + N detail-страниц (очередь: новые → изменённые → просроченные по TTL) |
 | `pnpm scrape -- --pages 2 --vacancies 10 --dry-run` | Тот же прогон без записи в БД/кэш (отчёт) |
 | `pnpm parse` | Перепарсинг кэшированных detail-HTML без сети (после правок парсера/словаря) |
+| `pnpm extract:llm [-- --limit N] [--job ID]` | LLM-добор навыков по кэшу: только вакансии с < порога навыками (`LLM_ENABLED=1`) |
 | `pnpm check:fixtures` | Офлайн-проверка парсеров на семплах `cache/research/` |
 | `pnpm seed:skills` | Загрузка/обновление словаря навыков в БД |
 | `pnpm stats -- --skills React[,TypeScript] [--window 7\|30\|90] [--top N]` | share=P(X\|S), lift, пробелы, глобальные частоты; навыки объединяются по ИЛИ |
@@ -96,15 +97,44 @@ pnpm stats -- --skills React,TypeScript --window 30
 - Сырой HTML сохраняется всегда (`cache/scrape/{list,detail}/`) — `pnpm parse` перечитывает
   его без повторных запросов.
 
-## Извлечение навыков (три слоя, без LLM)
+## Извлечение навыков (четыре слоя)
 
 1. **djinni_structured** — блок «Необхідний досвід з навичками» (навык + годы опыта);
 2. **djinni_extra** — доп. навыки через запятую + свёрнутые `more_skills_exp`;
 3. **description_keyword** — словарное сопоставление по тексту описания (EN/UA, границы слов);
-   вносит только навыки из словаря, вес nice-to-have.
+   вносит только навыки из словаря, вес nice-to-have;
+4. **llm_description** (опционально, ADR 0002) — вызывается **только** когда первые три слоя
+   дали меньше `LLM_EXTRACT_THRESHOLD` навыков: ~52% detail-страниц djinni не имеют блока
+   «Навыки», их требования живут в свободном тексте. LLM возвращает структурированный JSON
+   (AI SDK, zod-схема), имена проходят через словарь; неизвестные — `Skill(isCanonical=false)`.
 
 Нераспознанные имена не теряются: создаются как `Skill(isCanonical=false)`, печатаются в лог
 и попадают в отчёт для курации словаря (`src/skills/dictionary.ts`).
+
+### LLM-слой: включение и провайдеры
+
+Один OpenAI-совместимый фасад, переключается в `.env`:
+
+```bash
+LLM_ENABLED=1
+LLM_API_KEY=<ключ>                 # Zen: https://opencode.ai/auth (есть бесплатные модели)
+LLM_BASE_URL=https://opencode.ai/zen/v1   # или OpenRouter/OpenAI/Gemini-compat
+LLM_MODEL=deepseek-v4-flash-free   # любая chat-completions модель провайдера
+```
+
+Локальный вариант — LM Studio: `LLM_BASE_URL=http://localhost:1234/v1`, любой непустой
+`LLM_API_KEY`. Дополнительно: `LLM_EXTRACT_THRESHOLD` (default 1 — гейт «навыков < N»),
+`LLM_CONCURRENCY` (3), `LLM_MAX_ATTEMPTS` (2), `LLM_TIMEOUT_MS` (60000).
+
+Прогон по кэшу (без скрейпа, лимитирует платные вызовы):
+
+```bash
+pnpm extract:llm -- --limit 5    # smoke-тест: 5 вакансий
+pnpm extract:llm                 # полный проход (вакансии-«нулевики»)
+```
+
+Стоимость: ~1–2k токенов на вакансию — пройти 250 кэшированных вакансий на бесплатной/mini-модели
+— в пределах $0.01–0.5; итоговый расход токенов печатается в конце прогона.
 
 ## Два представления данных (решение 2026-10-24)
 
