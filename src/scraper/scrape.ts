@@ -92,7 +92,7 @@ async function scrapeListPages(
 
   for (let page = 1; page <= opts.pages; page++) {
     const url = `${config.baseUrl}/jobs/?page=${page}`;
-    console.log(`[scrape] GET ${c.cyan(url)}`);
+    console.log(`[scrape] GET ${c.blue(url)}`);
     const html = await fetcher.fetch(url);
     tracker.countPageFetched();
 
@@ -185,7 +185,7 @@ async function scrapeDetails(
     if (!job) continue;
 
     const url = job.url;
-    console.log(`[scrape] GET ${c.cyan(url)}`);
+    console.log(`[scrape] GET ${c.blue(url)}`);
     let html: string;
     try {
       html = await fetcher.fetch(url);
@@ -207,7 +207,7 @@ async function scrapeDetails(
 
     const detail = parseDetailPage(html, url);
     if (!detail) {
-      console.warn(`[scrape] не удалось разобрать detail-страницу ${ce.cyan(url)}`);
+      console.warn(`[scrape] не удалось разобрать detail-страницу ${ce.blue(url)}`);
       continue;
     }
 
@@ -262,7 +262,7 @@ export function printVacancySummary(
 
   console.log(
     `${label} вакансия ${c.bold(String(jobId))} ${c.magenta(`«${title}»`)}\n` +
-      `         опубликовано ${c.blue(published)} · обновлено ${c.blue(updated)}\n` +
+      `         опубликовано ${c.cyan(published)} · обновлено ${c.cyan(updated)}\n` +
       `         навыков ${c.green(String(detail.skills.length))}` +
       `${skillNames ? c.green(` (${skillNames})`) : ""}, ` +
       `английский ${detail.englishLevel}, опыт ${c.bold(String(detail.experienceYears ?? "?"))} лет`,

@@ -49,7 +49,7 @@ export class RateLimitedFetcher {
         if (res.status === 429 || res.status === 403 || res.status >= 500) {
           const waitMs = backoffMs(attempt);
           console.warn(
-            `[fetcher] HTTP ${ce.red(String(res.status))} для ${ce.cyan(url)}; ` +
+            `[fetcher] HTTP ${ce.red(String(res.status))} для ${ce.blue(url)}; ` +
               `backoff ${ce.bold(`${Math.round(waitMs / 1000)}с`)} ${ce.dim(`(попытка ${attempt}/${config.maxRetries})`)}`,
           );
           await sleep(waitMs);
@@ -64,7 +64,7 @@ export class RateLimitedFetcher {
         if (attempt === config.maxRetries) throw err;
         const waitMs = backoffMs(attempt);
         console.warn(
-          `[fetcher] ошибка для ${ce.cyan(url)}: ` +
+          `[fetcher] ошибка для ${ce.blue(url)}: ` +
             `${ce.red(err instanceof Error ? err.message : String(err))}; ` +
             `backoff ${ce.bold(`${Math.round(waitMs / 1000)}с`)} ${ce.dim(`(попытка ${attempt}/${config.maxRetries})`)}`,
         );
