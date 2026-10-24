@@ -13,7 +13,7 @@ import path from "node:path";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { parseListPage } from "../parser/parse-list.js";
-import { parseDetailPage } from "../parser/parse-detail.js";
+import { parseDetailPage, type ParsedDetail } from "../parser/parse-detail.js";
 import { extractJobSkills } from "../skills/extract.js";
 import { updateJobFromDetail, upsertJobFromList } from "../storage.js";
 import { RunTracker } from "../runlog.js";
@@ -262,15 +262,41 @@ async function scrapeDetails(
     }
 
     refetched++;
-    const skillNames = detail.skills.map((s) => s.name).join(", ");
-    console.log(
-      `[scrape] вакансия ${c.bold(String(jobId))}: навыков ${c.green(String(detail.skills.length))}` +
-        `${skillNames ? c.green(` (${skillNames})`) : ""}, ` +
-        `английский ${detail.englishLevel}, опыт ${c.bold(String(detail.experienceYears ?? "?"))} лет`,
-    );
+    printVacancySummary(jobId, detail);
   }
 
   tracker.countJobsRefetched(refetched);
+}
+
+/**
+ * Итоговая сводка по вакансии в консоль: заголовок, даты публикации/обновления,
+ * навыки/язык/опыт. Одна вакансия — один блок из трёх строк.
+ */
+export function printVacancySummary(
+  jobId: number,
+  detail: ParsedDetail,
+  label = "[scrape]",
+): void {
+  const title =
+    detail.title.length > 60 ? `${detail.title.slice(0, 57)}…` : detail.title;
+  const published = detail.datePosted ? formatDate(detail.datePosted) : "?";
+  const updated = detail.updatedAtDjinni
+    ? formatDate(detail.updatedAtDjinni)
+    : "— (не обновлялась)";
+  const skillNames = detail.skills.map((s) => s.name).join(", ");
+
+  console.log(
+    `${label} вакансия ${c.bold(String(jobId))} ${c.magenta(`«${title}»`)}\n` +
+      `         опубликовано ${c.blue(published)} · обновлено ${c.blue(updated)}\n` +
+      `         навыков ${c.green(String(detail.skills.length))}` +
+      `${skillNames ? c.green(` (${skillNames})`) : ""}, ` +
+      `английский ${detail.englishLevel}, опыт ${c.bold(String(detail.experienceYears ?? "?"))} лет`,
+  );
+}
+
+/** ISO-дата без времени: 2026-10-23. */
+function formatDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 // ---------- Кэш сырого HTML ----------

@@ -109,7 +109,11 @@ export function parseDetailPage(html: string, pageUrl: string): ParsedDetail | n
   // Английский из блока «Вимоги до володіння мовами»
   const englishLevel = parseEnglishFromLanguages($);
 
-  // #job-publication-info: опубликовано/обновлено/просмотры/отклики
+  // #job-publication-info: опубліковано/обновлено/просмотры/отклики.
+  // Дата публикации: DOM «Опубліковано …» приоритетнее JSON-LD datePosted!
+  // Проверено на кэше (236 страниц): у ~40% обновлённых вакансий Djinni
+  // перезаписывает JSON-LD datePosted датой последнего обновления («Оновлено …»),
+  // теряя исходную дату публикации. JSON-LD — только fallback (усечённый HTML).
   const pubInfo = $("#job-publication-info").text();
   const datePosted =
     parseUkrainianDate(extractAfter(pubInfo, "Опубліковано") ?? "") ??

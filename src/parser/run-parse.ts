@@ -7,6 +7,7 @@ import { prisma } from "../db.js";
 import { parseDetailPage } from "./parse-detail.js";
 import { extractJobSkills } from "../skills/extract.js";
 import { updateJobFromDetail } from "../storage.js";
+import { printVacancySummary } from "../scraper/scrape.js";
 import { RunTracker } from "../runlog.js";
 import { c, ce } from "../log.js";
 
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
       }
 
       await updateJobFromDetail(detail, path.join(dir, file));
+      printVacancySummary(jobId, detail, "[parse]");
       const { resolved, unresolvedNames } = await extractJobSkills({
         jobId,
         structuredSkills: detail.skills.map((s) => ({
