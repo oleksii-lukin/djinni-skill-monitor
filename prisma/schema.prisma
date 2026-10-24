@@ -157,6 +157,36 @@ model JobSkillRequirement {
   @@index([source])
 }
 
+enum RawPageKind {
+  LIST
+  DETAIL
+}
+
+// Сырой HTML страницы djinni: канонический сторедж кэша (RAW_STORE=db).
+// Хранится только последний снапшот на ключ (kind, externalKey);
+// если HTML не изменился (sha256 совпал) — обновляется только fetchedAt.
+model RawHtmlPage {
+  id          Int         @id @default(autoincrement())
+  kind        RawPageKind
+  externalKey String // DETAIL: id вакансии; LIST: «page-1», «page-2»…
+  url         String // исходный URL
+  html        String      @db.Text
+  sha256      String
+  byteSize    Int
+  httpStatus  Int?
+  fetchedAt   DateTime    @default(now())
+
+  @@unique([kind, externalKey])
+}
+
+// Состояние кэша страниц списка (аналог cache/list-state.json, одна строка).
+model ListCacheState {
+  id           Int      @id @default(1)
+  ids          Int[]
+  pagesFetched Int
+  fetchedAt    DateTime
+}
+
 model RunLog {
   id        Int      @id @default(autoincrement())
   type      RunType

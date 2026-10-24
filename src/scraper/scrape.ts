@@ -8,14 +8,13 @@
 //
 // Лимиты одного запуска: --pages (страниц списка, default 5) и
 // --vacancies (detail-страниц, default 5).
-import fs from "node:fs/promises";
-import path from "node:path";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { parseListPage } from "../parser/parse-list.js";
 import { parseDetailPage, type ParsedDetail } from "../parser/parse-detail.js";
 import { extractJobSkills } from "../skills/extract.js";
 import { updateJobFromDetail, upsertJobFromList } from "../storage.js";
+import { createRawStore, type RawStore } from "../storage/raw-store.js";
 import { RunTracker } from "../runlog.js";
 import { c, ce } from "../log.js";
 import { HttpError, RateLimitedFetcher } from "./fetcher.js";
@@ -34,16 +33,20 @@ export async function runScrape(opts: ScrapeRunOptions): Promise<void> {
 
   const tracker = await RunTracker.start("SCRAPE_RUN");
   const fetcher = new RateLimitedFetcher(() => tracker.countRequest());
+  const store = createRawStore();
 
   try {
     // Этап 1: список страниц (TTL 1 день — инвалидирует все страницы разом)
-    const listState = await getListCacheState();
+    const listState = await store.getListState();
+    const listAgeDays = listState
+      ? (Date.now() - listState.fetchedAt.getTime()) / 86_400_000
+      : Infinity;
     let discoveredIds: number[] = [];
 
-    if (listState.fresh && listState.ageDays < listTtlDays && opts.pages <= listState.pagesFetched) {
+    if (listState && listAgeDays < listTtlDays && opts.pages <= listState.pagesFetched) {
       // Список свежий — страницы из кэша, без запросов
       console.log(
-        `[scrape] список свежий ${c.dim(`(${listState.ageDays.toFixed(2)} дн. < ${listTtlDays})`)} — ` +
+        `[scrape] список свежий ${c.dim(`(${listAgeDays.toFixed(2)} дн. < ${listTtlDays})`)} — ` +
           `берём ids из кэша страниц, запросов не делаем`,
       );
       tracker.countPageCacheHit();
@@ -52,7 +55,7 @@ export async function runScrape(opts: ScrapeRunOptions): Promise<void> {
       console.log(
         `[scrape] обход ${c.bold(String(opts.pages))} страниц списка ${c.dim(`(TTL ${listTtlDays} дн.)`)}…`,
       );
-      discoveredIds = await scrapeListPages(fetcher, tracker, opts);
+      discoveredIds = await scrapeListPages(fetcher, tracker, store, opts);
     }
 
     // Этап 2: detail-очередь — новые/просроченные/изменённые
@@ -63,7 +66,7 @@ export async function runScrape(opts: ScrapeRunOptions): Promise<void> {
       console.log(
         `[scrape] качаем ${c.bold(String(detailQueue.length))} detail-страниц ${c.dim(`(TTL ${detailTtlDays} дн.)`)}…`,
       );
-      await scrapeDetails(fetcher, tracker, detailQueue, opts);
+      await scrapeDetails(fetcher, tracker, store, detailQueue, opts);
     }
 
     await tracker.finish();
@@ -80,6 +83,7 @@ export async function runScrape(opts: ScrapeRunOptions): Promise<void> {
 async function scrapeListPages(
   fetcher: RateLimitedFetcher,
   tracker: RunTracker,
+  store: RawStore,
   opts: ScrapeRunOptions,
 ): Promise<number[]> {
   const ids: number[] = [];
@@ -98,16 +102,16 @@ async function scrapeListPages(
       break;
     }
 
-    // Сохраняем сырой HTML списка (один файл на страницу — перезапись при обновлении)
-    let rawPath: string | null = null;
+    // Сохраняем сырой HTML списка (одна запись на страницу — перезапись при обновлении)
+    let rawRef: string | null = null;
     if (!opts.dryRun) {
-      rawPath = await saveRawHtml("list", `page-${page}.html`, html);
+      rawRef = await store.put("LIST", `page-${page}`, url, html);
     }
 
     for (const item of items) {
       ids.push(item.id);
       if (opts.dryRun) continue;
-      const { isNew } = await upsertJobFromList(item, rawPath);
+      const { isNew } = await upsertJobFromList(item, rawRef);
       if (isNew) newCount++;
       else updatedCount++;
     }
@@ -118,40 +122,10 @@ async function scrapeListPages(
   if (!opts.dryRun) {
     tracker.countJobsNew(newCount);
     tracker.countJobsUpdated(updatedCount);
-    await saveListState({ ids, pagesFetched: opts.pages, fetchedAt: new Date() });
+    await store.saveListState({ ids, pagesFetched: opts.pages, fetchedAt: new Date() });
   }
 
   return ids;
-}
-
-/** Состояние кэша списка: свежесть и ids последнего успешного обхода. */
-async function getListCacheState(): Promise<{
-  fresh: boolean;
-  ageDays: number;
-  pagesFetched: number;
-  ids: number[];
-}> {
-  try {
-    const raw = await fs.readFile(path.join(config.cacheDir, "list-state.json"), "utf8");
-    const state = JSON.parse(raw) as { ids: number[]; pagesFetched: number; fetchedAt: string };
-    const ageDays = (Date.now() - new Date(state.fetchedAt).getTime()) / 86_400_000;
-    return { fresh: true, ageDays, pagesFetched: state.pagesFetched, ids: state.ids };
-  } catch {
-    return { fresh: false, ageDays: Infinity, pagesFetched: 0, ids: [] };
-  }
-}
-
-async function saveListState(state: {
-  ids: number[];
-  pagesFetched: number;
-  fetchedAt: Date;
-}): Promise<void> {
-  await fs.mkdir(config.cacheDir, { recursive: true });
-  await fs.writeFile(
-    path.join(config.cacheDir, "list-state.json"),
-    JSON.stringify(state, null, 2),
-    "utf8",
-  );
 }
 
 // ---------- Этап 2: detail-страницы ----------
@@ -200,6 +174,7 @@ async function buildDetailQueue(
 async function scrapeDetails(
   fetcher: RateLimitedFetcher,
   tracker: RunTracker,
+  store: RawStore,
   queue: number[],
   opts: ScrapeRunOptions,
 ): Promise<void> {
@@ -236,10 +211,10 @@ async function scrapeDetails(
       continue;
     }
 
-    let rawPath: string | null = null;
+    let rawRef: string | null = null;
     if (!opts.dryRun) {
-      rawPath = await saveRawHtml("detail", `${jobId}.html`, html);
-      await updateJobFromDetail(detail, rawPath);
+      rawRef = await store.put("DETAIL", String(jobId), url, html);
+      await updateJobFromDetail(detail, rawRef);
 
       // Извлечение навыков: структурированные djinni + keyword-слой
       const { resolved, unresolvedNames } = await extractJobSkills({
@@ -297,14 +272,4 @@ export function printVacancySummary(
 /** ISO-дата без времени: 2026-10-23. */
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
-}
-
-// ---------- Кэш сырого HTML ----------
-
-async function saveRawHtml(kind: "list" | "detail", filename: string, html: string): Promise<string> {
-  const dir = path.join(config.cacheDir, kind);
-  await fs.mkdir(dir, { recursive: true });
-  const filePath = path.join(dir, filename);
-  await fs.writeFile(filePath, html, "utf8");
-  return filePath;
 }

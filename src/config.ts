@@ -32,8 +32,11 @@ export const config = {
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
       "Chrome/126.0 Safari/537.36 SkillRadar/0.1 (+github.com/llamerr/djinni-skill-monitor)",
 
-  cacheDir: "cache/scrape", // сырой HTML: cache/scrape/{list,detail}/…
+  cacheDir: "cache/scrape", // сырой HTML: cache/scrape/{list,detail}/… (RAW_STORE=fs)
   analysisDir: "cache/analysis", // экспорт аналитических снапшотов
+
+  // Сторедж сырого HTML: db — таблица RawHtmlPage (общий кэш), fs — файлы (фолбэк)
+  rawStore: (process.env.RAW_STORE === "fs" ? "fs" : "db") as "db" | "fs",
 } as const;
 
 if (config.delayMaxMs < config.delayMinMs) {

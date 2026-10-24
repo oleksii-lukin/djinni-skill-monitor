@@ -9,6 +9,7 @@
     "seed:skills": "tsx src/skills/seed.ts",
     "scrape": "tsx src/scraper/run.ts",
     "parse": "tsx src/parser/run-parse.ts",
+    "raw:sync": "tsx src/sync-raw.ts",
     "check:fixtures": "tsx src/parser/check-fixtures.ts",
     "export": "tsx src/analysis/export.ts",
     "stats": "tsx src/analysis/stats.ts"
