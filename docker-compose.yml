@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: djinni-monitor-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: djinni
+      POSTGRES_PASSWORD: djinni
+      POSTGRES_DB: djinni
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U djinni -d djinni"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

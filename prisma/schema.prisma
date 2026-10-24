@@ -1,0 +1,177 @@
+// Рыночное подмножество модели данных (specs/05-data-model.md).
+// Сознательно БЕЗ User/Profile/Match — рыночные данные глобальные;
+// пользовательские сущности добавляются с профильной надстройкой (см. specs/implementation/0001).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobStatus {
+  ACTIVE
+  EXPIRED
+}
+
+enum WorkFormat {
+  REMOTE
+  HYBRID
+  OFFICE
+  UNKNOWN
+}
+
+enum EnglishLevel {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+  ADVANCED
+  UNKNOWN
+}
+
+enum SkillCategory {
+  LANGUAGE
+  FRONTEND
+  BACKEND
+  DATABASE
+  CLOUD
+  DEVOPS
+  TOOL
+  TESTING
+  DOMAIN
+  CONCEPT
+  OTHER
+}
+
+// Источник извлечения навыка (приоритет: structured > extra > description_keyword)
+enum SkillSource {
+  DJINNI_STRUCTURED // блок «Необхідний досвід з навичками» (детальная страница)
+  DJINNI_EXTRA // доп. навыки через запятую + свёрнутые more_skills_exp
+  DESCRIPTION_KEYWORD // словарное сопоставление по тексту описания (самый шумный)
+}
+
+enum RunType {
+  SCRAPE_LIST
+  SCRAPE_DETAIL
+  SCRAPE_RUN
+  PARSE_CACHED
+  ANALYSIS_EXPORT
+  ANALYSIS_STATS
+}
+
+enum RunStatus {
+  OK
+  ERROR
+}
+
+model JobPosting {
+  id        Int @id // числовой id Djinni (из /jobs/<id>-<slug>/)
+  slug      String?
+  url       String
+
+  title     String
+  company   String?
+  logoUrl   String?
+  category  String? // Djinni-категория (Architect, QA, Frontend…)
+  industry  String?
+  domain    String? // «Домен: Healthcare / MedTech» из sidebar
+
+  description String? @db.Text // полный текст (js-original-text или JSON-LD)
+  descriptionHtml String? @db.Text // опционально: HTML описания
+
+  datePosted      DateTime?
+  validThrough    DateTime?
+  updatedAtDjinni DateTime? // «Оновлено …» на detail-странице — драйвер TTL
+
+  employmentType String? // FULL_TIME…
+  workFormat     WorkFormat @default(UNKNOWN)
+  location       String?
+  countries      String[]
+
+  experienceYears Float? // из experienceRequirements.monthsOfExperience / 12
+  englishLevel    EnglishLevel @default(UNKNOWN)
+
+  salaryTier     String? // $..$$$$ (относительный тир djinni)
+  salaryMin      Int? // из baseSalary (USD/мес), если есть
+  salaryMax      Int?
+  salaryCurrency String?
+
+  viewsCount   Int?
+  repliesCount Int?
+
+  rawListHtmlPath   String?
+  rawDetailHtmlPath String?
+  listCachedAt      DateTime? // когда данные получены со страницы списка
+  detailCachedAt    DateTime? // когда качали detail-страницу (TTL)
+  parsedAt          DateTime?
+  status            JobStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  skills JobSkillRequirement[]
+
+  @@index([datePosted])
+  @@index([detailCachedAt])
+  @@index([status])
+}
+
+model Skill {
+  id   Int @id @default(autoincrement())
+  name String @unique // canonical, напр. «Spring Boot»
+  aliases String[]
+  category SkillCategory @default(OTHER)
+  isCanonical Boolean @default(true) // false = авто-создан из djinni-имени (кандидат на курацию)
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requirements JobSkillRequirement[]
+
+  @@index([category])
+}
+
+model JobSkillRequirement {
+  id      Int @id @default(autoincrement())
+  jobId   Int
+  skillId Int
+
+  source        SkillSource
+  isRequired    Boolean @default(true) // must-have vs nice-to-have (вес 1.0 vs 0.5)
+  yearsRequired Float? // «3 роки» → 3.0
+  rawName       String? // исходное имя из djinni (для аудита нормализации)
+
+  job   JobPosting @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skill Skill      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, skillId])
+  @@index([skillId])
+  @@index([source])
+}
+
+model RunLog {
+  id        Int      @id @default(autoincrement())
+  type      RunType
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  status    RunStatus @default(OK)
+  error     String? @db.Text
+
+  pagesFetched  Int @default(0)
+  pagesCacheHit Int @default(0)
+  jobsNew       Int @default(0)
+  jobsUpdated   Int @default(0)
+  jobsRefetched Int @default(0) // detail-страницы, перекачанные по TTL/изменению
+  skillsLinked  Int @default(0)
+  requestsMade  Int @default(0) // фактические HTTP-запросы (вкл. ретраи)
+
+  @@index([startedAt])
+}

@@ -1,0 +1,33 @@
+{
+  "name": "djinni-skill-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "seed:skills": "tsx src/skills/seed.ts",
+    "scrape": "tsx src/scraper/run.ts",
+    "parse": "tsx src/parser/run-parse.ts",
+    "check:fixtures": "tsx src/parser/check-fixtures.ts",
+    "export": "tsx src/analysis/export.ts",
+    "stats": "tsx src/analysis/stats.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.2.1",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "prisma": "^6.2.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "volta": {
+    "node": "24.22.0"
+  }
+}

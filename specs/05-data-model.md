@@ -4,6 +4,14 @@
 типы (Prisma) будут уточнены при реализации. Все пользовательские сущности содержат `userId`
 (фаза 1 — один пользователь, но поле присутствует сразу).
 
+> **Имплементация F1 (2026-10-24)**: в БД реализовано рыночное подмножество —
+> `JobPosting`, `Skill`, `JobSkillRequirement`, `RunLog` — **без `userId`** (профильная
+> надстройка отдельная система, см. `specs/implementation/0001-market-pipeline.md`).
+> `Skill.aliases` — Postgres массив строк; `Skill.category` — enum; `SkillSource` — enum
+> (`DJINNI_STRUCTURED` / `DJINNI_EXTRA` / `DESCRIPTION_KEYWORD`). `SkillPairStat`,
+> `SkillCategoryBaseline`, `StackCombo` — агрегаты, в F1 не создаются: считаются on-the-fly
+> (`pnpm stats`) и экспортируются снапшотами.
+
 ## Сущности
 
 ### User
