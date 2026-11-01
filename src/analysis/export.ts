@@ -1,6 +1,7 @@
 // Аналитическое представление данных: экспорт снапшотов.
 // pnpm export            — все вакансии
 // pnpm export -- --window 30 — только за последние N дней (по datePosted)
+// pnpm export -- --include-unresolved — включить неканонические навыки (по умолчанию исключены)
 //
 // Форматы:
 // - snapshot-<date>.json — метаданные + вакансии с навыками (для приложения/дальнейших пайплайнов);
@@ -21,6 +22,7 @@ function arg(name: string): number | null {
 
 async function main(): Promise<void> {
   const windowDays = arg("window");
+  const includeUnresolved = process.argv.includes("--include-unresolved");
   const tracker = await RunTracker.start("ANALYSIS_EXPORT");
 
   try {
@@ -44,6 +46,7 @@ async function main(): Promise<void> {
         generatedAt: new Date().toISOString(),
         windowDays,
         jobCount: jobs.length,
+        canonicalOnly: !includeUnresolved,
         source: "djinni.co",
       },
       jobs: jobs.map((job) => ({
@@ -66,14 +69,16 @@ async function main(): Promise<void> {
         salaryMin: job.salaryMin,
         salaryMax: job.salaryMax,
         salaryCurrency: job.salaryCurrency,
-        skills: job.skills.map((s) => ({
-          name: s.skill.name,
-          category: s.skill.category,
-          isCanonical: s.skill.isCanonical,
-          source: s.source,
-          isRequired: s.isRequired,
-          yearsRequired: s.yearsRequired,
-        })),
+        skills: job.skills
+          .filter((s) => includeUnresolved || s.skill.isCanonical) // неканонические — по --include-unresolved
+          .map((s) => ({
+            name: s.skill.name,
+            category: s.skill.category,
+            isCanonical: s.skill.isCanonical,
+            source: s.source,
+            isRequired: s.isRequired,
+            yearsRequired: s.yearsRequired,
+          })),
       })),
     };
 

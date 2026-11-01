@@ -1,8 +1,11 @@
 // Детерминированная аналитика skill gap (specs/06): ядро MVP без ML.
 // pnpm stats -- --skills React --window 30
 // pnpm stats -- --skills React,TypeScript --window 90 --top 15
+// pnpm stats -- --skills React --include-unresolved   — включить неканонические навыки
 //
 // Считает по окну (7/30/90 дней, фильтр по datePosted в БД).
+// По умолчанию участвуют только канонические навыки (isCanonical=true): неканонические —
+// сырьё для курации (pnpm skills:unresolved), они засоряют топы/пробелы мусором.
 // Seed-навыки объединяются по ИЛИ: вакансия релевантна, если содержит хотя бы один
 // из них (решение 2026-10-24: пересечение по И сузило бы выборку до единиц).
 // - share(X|S) = P(X|S): доля вакансий, содержащих любой навык S, где ещё встречается X;
@@ -21,12 +24,13 @@ function arg(name: string, def: string | null = null): string | null {
 
 const skillsArg = arg("skills");
 if (!skillsArg) {
-  console.error(ce.red("Укажите навыки:"), "pnpm stats -- --skills React,TypeScript [--window 30] [--top 15]");
+  console.error(ce.red("Укажите навыки:"), "pnpm stats -- --skills React,TypeScript [--window 30] [--top 15] [--include-unresolved]");
   process.exit(1);
 }
 
 const windowDays = Number.parseInt(arg("window", "30") ?? "30", 10);
 const topN = Number.parseInt(arg("top", "15") ?? "15", 10);
+const includeUnresolved = process.argv.includes("--include-unresolved");
 
 // Разрешить имена пользовательских навыков через словарь
 const seedSkills = skillsArg.split(",").map((s) => {
@@ -61,6 +65,7 @@ interface JobWeight {
 const bySkill = new Map<string, JobWeight[]>();
 for (const job of jobs) {
   for (const req of job.skills) {
+    if (!includeUnresolved && !req.skill.isCanonical) continue; // неканонические — в отчёт, не в топы
     const key = req.skill.name;
     const weight = req.isRequired ? 1.0 : 0.5;
     const list = bySkill.get(key) ?? [];
@@ -141,7 +146,7 @@ for (const [skillName, weights] of bySkill) {
 gapCandidates.sort((a, b) => b.share - a.share);
 
 // ---------- Вывод ----------
-console.log(`\n${c.bold(`=== ${seedSkills.join(" | ")} — окно ${windowDays} дн. ===`)}`);
+console.log(`\n${c.bold(`=== ${seedSkills.join(" | ")} — окно ${windowDays} дн.${includeUnresolved ? c.yellow(" (+неканонические)") : ""} ===`)}`);
 console.log(`Вакансий в окне: ${totalJobs}; со стеком (ИЛИ): ${c.bold(String(seedCount))} (${c.bold(((seedCount / totalJobs) * 100).toFixed(1))}% рынка)`);
 
 console.log(`\n${c.bold(`--- Топ-${topN} навыков рядом с вашим стеком (share = P(X|S), ИЛИ) ---`)}`);
