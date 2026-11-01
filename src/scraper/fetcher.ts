@@ -20,7 +20,10 @@ export class RateLimitedFetcher {
     return this.requestCount;
   }
 
-  async fetch(url: string): Promise<string> {
+  /**
+   * Текст ответа; `accept` переопределяет Accept-заголовок (для JSON-эндпоинтов djinni).
+   */
+  async fetch(url: string, accept?: string): Promise<string> {
     const fixedDelayMs = this.overrides?.delayMs;
     const userAgent = this.overrides?.userAgent ?? config.userAgent;
 
@@ -34,7 +37,7 @@ export class RateLimitedFetcher {
         const res = await fetch(url, {
           headers: {
             "User-Agent": userAgent,
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            Accept: accept ?? "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "uk-UA,uk;q=0.9,en;q=0.8",
           },
           signal: AbortSignal.timeout(config.timeoutMs),
@@ -73,6 +76,12 @@ export class RateLimitedFetcher {
     }
 
     throw new Error(`Не удалось получить ${url} за ${config.maxRetries} попыток`);
+  }
+
+  /** JSON-эндпоинт djinni (например, статистика кандидатов /api/jobs/<id>/?apply_stats). */
+  async fetchJson<T = unknown>(url: string): Promise<T> {
+    const text = await this.fetch(url, "application/json");
+    return JSON.parse(text) as T;
   }
 
   private async throttle(delayMs: number): Promise<void> {

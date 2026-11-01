@@ -10,6 +10,7 @@
     "skills:unresolved": "tsx src/skills/report-unresolved.ts",
     "skills:promote": "tsx src/skills/promote.ts",
     "scrape": "tsx src/scraper/run.ts",
+    "competition": "tsx src/competition/run.ts",
     "parse": "tsx src/parser/run-parse.ts",
     "raw:sync": "tsx src/sync-raw.ts",
     "extract:llm": "tsx src/skills/run-extract-llm.ts",

@@ -66,6 +66,13 @@ export const config = {
   listTtlDays: intEnv("LIST_TTL_DAYS", 1), // список валиден 1 день, инвалидирует все страницы
   detailTtlDays: intEnv("DETAIL_TTL_DAYS", 7), // детали 7 дней либо до изменения updatedAtDjinni
 
+  // Статистика конкуренции (pnpm competition, снапшот apply_stats на вакансию)
+  competition: {
+    ttlHours: intEnv("COMPETITION_TTL_HOURS", 24), // снапшот старше — качаем заново
+    defaultLimit: intEnv("COMPETITION_DEFAULT_LIMIT", 20), // размер шортлиста за прогон
+    defaultWindowDays: intEnv("COMPETITION_WINDOW_DAYS", 30), // окно «актуальности» вакансий
+  },
+
   userAgent:
     process.env.SCRAPE_USER_AGENT ??
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
