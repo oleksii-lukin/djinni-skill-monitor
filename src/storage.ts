@@ -11,7 +11,10 @@ export async function upsertJobFromList(
 ): Promise<{ isNew: boolean }> {
   const existing = await prisma.jobPosting.findUnique({ where: { id: item.id } });
 
-  const data: Pick<Prisma.JobPostingUpsertInput, "create" | "update"> = {
+  const data: {
+    create: Prisma.JobPostingUncheckedCreateInput;
+    update: Prisma.JobPostingUncheckedUpdateInput;
+  } = {
     create: {
       id: item.id,
       slug: item.slug,

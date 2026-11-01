@@ -13,7 +13,8 @@
     "extract:llm": "tsx src/skills/run-extract-llm.ts",
     "check:fixtures": "tsx src/parser/check-fixtures.ts",
     "export": "tsx src/analysis/export.ts",
-    "stats": "tsx src/analysis/stats.ts"
+    "stats": "tsx src/analysis/stats.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.0",

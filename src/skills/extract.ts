@@ -66,10 +66,12 @@ export async function extractJobSkills(input: {
   const bySkillId = new Map<number, ResolvedSkill>();
   const unresolvedNames: string[] = [];
 
+  // LLM-слой (ADR 0002) — самый низкий приоритет: детерминированные слои выше
   const sourcePriority: Record<SkillSource, number> = {
     DJINNI_STRUCTURED: 3,
     DJINNI_EXTRA: 2,
     DESCRIPTION_KEYWORD: 1,
+    LLM_DESCRIPTION: 0,
   };
 
   const add = async (
