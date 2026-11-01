@@ -44,6 +44,8 @@ export const ce = {
   green: err("32"),
   yellow: err("33"),
   red: err("31"),
+  /** синий: URL и адреса (bright) */
+  blue: err("94"),
   dim: err("90"),
   bold: err("1"),
 };
