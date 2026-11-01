@@ -11,6 +11,7 @@ import path from "node:path";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { RunTracker } from "../runlog.js";
+import { csvCell } from "./csv.js";
 import { c, ce } from "../log.js";
 
 function arg(name: string): number | null {
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
         skills: {
           include: { skill: true },
         },
+        applicantStats: true,
       },
       orderBy: { datePosted: "desc" },
     });
@@ -69,6 +71,19 @@ async function main(): Promise<void> {
         salaryMin: job.salaryMin,
         salaryMax: job.salaryMax,
         salaryCurrency: job.salaryCurrency,
+        // Сигналы конкуренции (см. specs/07-competition-signals.md):
+        // поля detail-страницы + последний снапшот apply_stats, если он есть
+        competition: {
+          viewsCount: job.viewsCount,
+          repliesCount: job.repliesCount,
+          views30d: job.views30d,
+          replies30d: job.replies30d,
+          recruiterActivity: job.recruiterActivity,
+          recruiterLastResponseAt: job.recruiterLastResponseAt?.toISOString() ?? null,
+          recruiterResponseLabel: job.recruiterResponseLabel,
+          applicants: job.applicantStats?.totalApplicants ?? null,
+          statsFetchedAt: job.applicantStats?.fetchedAt.toISOString() ?? null,
+        },
         skills: job.skills
           .filter((s) => includeUnresolved || s.skill.isCanonical) // неканонические — по --include-unresolved
           .map((s) => ({
@@ -133,13 +148,6 @@ async function main(): Promise<void> {
   } finally {
     await prisma.$disconnect();
   }
-}
-
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const s = String(value);
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
 }
 
 main().catch((err) => {
