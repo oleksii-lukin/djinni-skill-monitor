@@ -23,6 +23,16 @@ enum WorkFormat {
   UNKNOWN
 }
 
+// Активность рекрутера («Активність рекрутера» на detail-странице).
+// djinni: Дуже висока / Висока / Середня / Низька; UNKNOWN — блока нет (новые вакансии).
+enum RecruiterActivity {
+  VERY_HIGH
+  HIGH
+  MEDIUM
+  LOW
+  UNKNOWN
+}
+
 enum EnglishLevel {
   A1
   A2
@@ -60,6 +70,7 @@ enum RunType {
   SCRAPE_LIST
   SCRAPE_DETAIL
   SCRAPE_RUN
+  SCRAPE_COMPETITION
   PARSE_CACHED
   EXTRACT_LLM
   ANALYSIS_EXPORT
@@ -103,8 +114,17 @@ model JobPosting {
   salaryMax      Int?
   salaryCurrency String?
 
+  // Статистика с detail-страницы: всё время (или без разбивки, если djinni её не показывает)
   viewsCount   Int?
   repliesCount Int?
+  // Разбивка «За 30 днів» — null, если вакансия молодая и разбивки нет
+  views30d   Int?
+  replies30d Int?
+
+  // Рекрутер: «Активність рекрутера» + «Відповідали …» (точный timestamp — из tooltip)
+  recruiterActivity        RecruiterActivity @default(UNKNOWN)
+  recruiterLastResponseAt  DateTime?
+  recruiterResponseLabel   String? // сырая подпись («Відповідали вчора»)
 
   rawListHtmlPath   String?
   rawDetailHtmlPath String?
@@ -118,9 +138,31 @@ model JobPosting {
 
   skills JobSkillRequirement[]
 
+  // Последний снапшот статистики откликнувшихся (GET /api/jobs/<id>/?apply_stats)
+  applicantStats JobApplicantStats?
+
   @@index([datePosted])
   @@index([detailCachedAt])
   @@index([status])
+}
+
+// Статистика кандидатов, откликнувшихся на вакансию (public JSON, без авторизации).
+// Один снапшот на вакансию (jobId = @id); история не хранится — только последний.
+// `percent` в распределениях djinni — нормировка на максимум, а НЕ доля:
+// долю считать как count / сумма(count) по конкретному массиву.
+model JobApplicantStats {
+  jobId           Int      @id
+  totalApplicants Int
+  experienceDist  Json // [{ label, count, percent }]
+  salaryDist      Json // [{ label, count, percent }]
+  englishDist     Json // [{ label, count, percent }]
+  topSkills       Json // [{ name, count, canonicalName? }]
+  rawJson         String   @db.Text // сырой ответ API (аудит/перепарсинг)
+  fetchedAt       DateTime @default(now())
+
+  job JobPosting @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([fetchedAt])
 }
 
 model Skill {
@@ -207,6 +249,7 @@ model RunLog {
   jobsNew       Int @default(0)
   jobsUpdated   Int @default(0)
   jobsRefetched Int @default(0) // detail-страницы, перекачанные по TTL/изменению
+  jobsStatsFetched Int @default(0) // снапшоты apply_stats, полученные pnpm competition
   skillsLinked  Int @default(0)
   requestsMade  Int @default(0) // фактические HTTP-запросы (вкл. ретраи)
 

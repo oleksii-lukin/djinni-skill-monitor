@@ -11,6 +11,7 @@ export class RunTracker {
   private jobsNew = 0;
   private jobsUpdated = 0;
   private jobsRefetched = 0;
+  private jobsStatsFetched = 0;
   private skillsLinked = 0;
 
   private constructor(id: number) {
@@ -47,6 +48,10 @@ export class RunTracker {
     this.jobsRefetched += n;
   }
 
+  countJobsStatsFetched(n: number): void {
+    this.jobsStatsFetched += n;
+  }
+
   countSkillsLinked(n: number): void {
     this.skillsLinked += n;
   }
@@ -64,14 +69,16 @@ export class RunTracker {
         jobsNew: this.jobsNew,
         jobsUpdated: this.jobsUpdated,
         jobsRefetched: this.jobsRefetched,
+        jobsStatsFetched: this.jobsStatsFetched,
         skillsLinked: this.skillsLinked,
         requestsMade: this.requestsMade,
       },
     });
+    const statsPart = this.jobsStatsFetched > 0 ? ` stats=${this.jobsStatsFetched}` : "";
     console.log(
       `${c.dim(`[run ${this.id}]`)} finish: ${failed ? c.red("ERROR") : c.green("OK")} ` +
         `pages=${this.pagesFetched} cacheHit=${this.pagesCacheHit} ` +
-        `new=${c.green(String(this.jobsNew))} updated=${this.jobsUpdated} refetched=${this.jobsRefetched} ` +
+        `new=${c.green(String(this.jobsNew))} updated=${this.jobsUpdated} refetched=${this.jobsRefetched}${statsPart} ` +
         `skills=${c.bold(String(this.skillsLinked))} requests=${this.requestsMade}`,
     );
   }
