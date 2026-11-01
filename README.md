@@ -54,6 +54,12 @@ pnpm scrape -- --pages 5 --vacancies 25
 #    Несколько навыков объединяются по ИЛИ: вакансия в выборке, если содержит
 #    хотя бы один из них («мой стек» — не строгое требование комбинации)
 pnpm stats -- --skills React,TypeScript --window 30
+
+# 7. Курация словаря — когда в логе скрейпа/парсинга накопились нераспознанные имена
+pnpm parse                                    # перепарсить кэш (убрать шум старого парсера)
+pnpm skills:unresolved -- --min-jobs 2 --top 30   # что не резолвится и сколько вакансий
+pnpm skills:promote -- --name "Nest.js" --merge-into "NestJS" --apply   # и т.д. по топу
+pnpm seed:skills && pnpm parse                # закрепить словарь и пересчитать навыки
 ```
 
 Файлы для просмотра после прогона:
@@ -70,13 +76,57 @@ pnpm stats -- --skills React,TypeScript --window 30
 | `pnpm extract:llm [-- --limit N] [--job ID]` | LLM-добор навыков по кэшу: только вакансии с < порога навыками (`LLM_ENABLED=1`) |
 | `pnpm check:fixtures` | Офлайн-проверка парсеров на семплах `cache/research/` |
 | `pnpm seed:skills` | Загрузка/обновление словаря навыков в БД |
-| `pnpm stats -- --skills React[,TypeScript] [--window 7\|30\|90] [--top N]` | share=P(X\|S), lift, пробелы, глобальные частоты; навыки объединяются по ИЛИ |
-| `pnpm export [-- --window N]` | Снапшот JSON + CSV (аналитическое представление) |
+| `pnpm skills:unresolved [-- --window N] [--min-jobs N] [--top N] [--status active\|all] [--export]` | Отчёт нераспознанных навыков: варианты слиты, число вакансий/доля/источники, вердикт (алиас/составной/похоже/шум/новый) |
+| `pnpm skills:promote -- --name X (--category CAT [--aliases a,b] \| --merge-into Y \| --drop) [--apply]` | Курация словаря: запись в `dictionary.ts` + БД; без `--apply` — dry-run |
+| `pnpm stats -- --skills React[,TypeScript] [--window 7\|30\|90] [--top N] [--include-unresolved]` | share=P(X\|S), lift, пробелы, глобальные частоты; навыки объединяются по ИЛИ |
+| `pnpm export [-- --window N] [--include-unresolved]` | Снапшот JSON + CSV (аналитическое представление) |
 | `pnpm db:studio` | Prisma Studio — просмотр БД |
 
 Флаги скрейпера: `--pages` (default 5), `--vacancies` (default 5), `--list-ttl-days`
 (default 1), `--detail-ttl-days` (default 7), `--keywords <список|none>` (категории
 фильтра на один запуск), `--dry-run`.
+
+`stats` и `export` по умолчанию считают только канонические навыки: неканонические
+(`isCanonical=false`) — сырьё для курации, они засоряют топы и пробелы. Вернуть их —
+флаг `--include-unresolved`.
+
+## Курация нераспознанных навыков
+
+Имена, которых нет в словаре, скрейп/парсинг/LLM сохраняют как `Skill(isCanonical=false)`
+и печатают в лог. В конце прогона — итоговая подсказка со ссылкой на отчёт. Цикл курации:
+
+```bash
+# 1. Свежий перепарсинг кэша — убирает шум старого парсера («2 роки», «6 місяців»)
+pnpm parse
+
+# 2. Отчёт: что не резолвится, в скольких вакансиях, какой вердикт
+pnpm skills:unresolved -- --min-jobs 2 --top 30
+pnpm skills:unresolved -- --window 30 --export   # JSON/CSV в cache/analysis/ для разбора
+
+# 3. Промоушен по топу (dry-run показывает diff словаря и план БД, --apply пишет)
+pnpm skills:promote -- --name "Nest.js" --merge-into "NestJS" --apply    # вариант → canonical
+pnpm skills:promote -- --name "Three.js" --category FRONTEND --aliases "ThreeJS" --apply  # новый
+pnpm skills:promote -- --name "2 роки" --drop --apply                    # шум парсера
+
+# 4. Закрепить: словарь в БД + пересчёт навыков по кэшу
+pnpm seed:skills && pnpm parse
+```
+
+Когда курировать: после прогона, где в логе появились нераспознанные имена, либо планово —
+когда в `--min-jobs 2` набралось достаточно повторяющихся кандидатов (единичные вхождения
+обычно мусор или разовые технологии, их можно игнорировать). Частота — раз в несколько
+прогонов, словарь статичен и растёт линейно.
+
+Вердикты отчёта:
+
+- **алиас** — имя уже есть в словаре в другом написании (`Nest.js` → `NestJS`);
+- **составной** — метка из нескольких навыков (`Jira & Confluence` → `Jira + Confluence`);
+- **похоже** — fuzzy-кандидат (Левенштейн), решение за куратором;
+- **шум** — артефакт парсера (длительности), удаляется `--drop`;
+- **новый** — действительно отсутствует в словаре, добавляется `--category`.
+
+Категории `--category`: `LANGUAGE, FRONTEND, BACKEND, DATABASE, CLOUD, DEVOPS, TOOL,
+TESTING, DOMAIN, CONCEPT, OTHER`.
 
 ## Фильтр категорий («Розробка»)
 
@@ -129,7 +179,8 @@ pnpm scrape -- --keywords React.js,Fullstack   # разовый оверрайд
    (AI SDK, zod-схема), имена проходят через словарь; неизвестные — `Skill(isCanonical=false)`.
 
 Нераспознанные имена не теряются: создаются как `Skill(isCanonical=false)`, печатаются в лог
-и попадают в отчёт для курации словаря (`src/skills/dictionary.ts`).
+(в конце прогона — итоговая подсказка с отчётом) и курируются командами
+`pnpm skills:unresolved` / `pnpm skills:promote` (см. «Курация нераспознанных навыков»).
 
 ### LLM-слой: включение и провайдеры
 
