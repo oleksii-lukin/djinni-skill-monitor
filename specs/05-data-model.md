@@ -13,6 +13,13 @@
 > `SkillCategoryBaseline`, `StackCombo` — агрегаты, в F1 не создаются: считаются on-the-fly
 > (`pnpm stats`) и экспортируются снапшотами.
 
+> **Сигналы конкуренции (2026-11-01, ADR 0004)**: в `JobPosting` добавлены `views30d`,
+> `replies30d`, `recruiterActivity`/`recruiterLastResponseAt`/`recruiterResponseLabel`
+> (из detail-страницы) и связь 1:1 с новой сущностью `JobApplicantStats` — последний снапшот
+> публичного `/api/jobs/<id>/?apply_stats` (сколько откликнулось, распределения по опыту/
+> English/зарплате, топ-навыки конкурентов). Продолжает рыночное подмножество: **без
+> профиля и `userId`** — сравнение вакансий между собой, а не с пользователем.
+
 ## Сущности
 
 ### User
@@ -43,6 +50,10 @@
 - `englishLevel` (enum), `salaryTier` (enum $–$$$$), `salaryMin`, `salaryMax`, `salaryCurrency`
   (из `baseSalary`, если есть)
 - `viewsCount`, `repliesCount`, `replies30d` (опционально)
+- `views30d`, `replies30d` — разбивка «За 30 днів» (null, если djinni её не показывает;
+  `viewsCount`/`repliesCount` — «За весь час», либо одиночная строка у молодых вакансий)
+- `recruiterActivity` (enum `RecruiterActivity`: VERY_HIGH/HIGH/MEDIUM/LOW/UNKNOWN),
+  `recruiterLastResponseAt` (из tooltip «Відповідали …»), `recruiterResponseLabel` (сырая подпись)
 - `rawHtmlPath` (путь к сырому HTML — опционально)
 - `parsedAt`, `normalizedAt` (LLM-нормализация выполнена)
 - `status` (enum: active/expired)
@@ -51,6 +62,20 @@
 - `jobId` (→ JobPosting), `skillId` (→ Skill)
 - `yearsRequired` (optional), `isRequired` (must-have vs nice-to-have)
 - уникальность: (jobId, skillId)
+
+### JobApplicantStats (статистика откликнувшихся, 2026-11-01)
+
+Последний снапшот публичного JSON `/api/jobs/<jobId>/?apply_stats`; одна строка на вакансию
+(`jobId` = primary key), история не хранится — только самый свежий снимок.
+
+- `jobId` (→ JobPosting, cascade delete)
+- `totalApplicants` (текущее число откликнувшихся)
+- `experienceDist`, `salaryDist`, `englishDist` (JSON: `[{label, count, percent}]`) —
+  `percent` у djinni нормирован на максимум, НЕ доля
+- `topSkills` (JSON: `[{name, count, canonicalName?}]` — навыки откликнувшихся,
+  `canonicalName` проставляется словарём при разборе)
+- `rawJson` (сырой ответ — аудит и перепарсинг после правок парсера)
+- `fetchedAt` (TTL снапшота; `COMPETITION_TTL_HOURS`, default 24)
 
 ### Skill (таксономия)
 - `id`, `name` (canonical, напр. «Spring Boot»), `aliases` (JSON: варианты написания)

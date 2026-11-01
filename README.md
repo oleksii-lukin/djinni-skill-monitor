@@ -1,8 +1,8 @@
 # djinni-skill-monitor — SkillRadar
 
 Монитор рынка вакансий djinni.co: сбор, детерминированный парсинг, извлечение навыков,
-аналитика комбинаций (skill gap). Профиль пользователя и матчинг — отдельная надстройка
-(рыночные данные от неё не зависят).
+аналитика комбинаций (skill gap), сигналы конкуренции (отклики, рекрутер, кандидаты).
+Профиль пользователя и матчинг — отдельная надстройка (рыночные данные от неё не зависят).
 
 Документация: [`specs/`](specs/README.md) · Лог имплементации: [`specs/implementation/`](specs/implementation/)
 
@@ -55,7 +55,14 @@ pnpm scrape -- --pages 5 --vacancies 25
 #    хотя бы один из них («мой стек» — не строгое требование комбинации)
 pnpm stats -- --skills React,TypeScript --window 30
 
-# 7. Курация словаря — когда в логе скрейпа/парсинга накопились нераспознанные имена
+# 7. Сигналы конкуренции — «сколько откликнулось и стоит ли подаваться».
+#    Detail-сигналы (30-дневная разбивка, активность и ответ рекрутера) уже в БД после parse.
+#    apply_stats (профиль кандидатов) — он-деманд, сначала собираем рыночную базу:
+pnpm competition -- --window 90 --limit 100 --export   # добор снапшотов + baseline
+pnpm competition -- --skills React,TypeScript --window 30 --limit 25   # топ-25 под мой стек
+pnpm competition -- --job 834543                       # подробная карточка одной вакансии
+
+# 8. Курация словаря — когда в логе скрейпа/парсинга накопились нераспознанные имена
 pnpm parse                                    # перепарсить кэш (убрать шум старого парсера)
 pnpm skills:unresolved -- --min-jobs 2 --top 30   # что не резолвится и сколько вакансий
 pnpm skills:promote -- --name "Nest.js" --merge-into "NestJS" --apply   # и т.д. по топу
@@ -64,7 +71,8 @@ pnpm seed:skills && pnpm parse                # закрепить словар�
 
 Файлы для просмотра после прогона:
 - `cache/analysis/snapshot-<date>.csv` — таблица вакансия×навык (открывается в Excel/Google Sheets/pandas);
-- `cache/analysis/snapshot-<date>.json` — структурированный снапшот.
+- `cache/analysis/snapshot-<date>.json` — структурированный снапшот;
+- `cache/analysis/competition-<date>.csv` — сигналы конкуренции, одна строка = вакансия.
 
 ## Команды
 
@@ -79,12 +87,18 @@ pnpm seed:skills && pnpm parse                # закрепить словар�
 | `pnpm skills:unresolved [-- --window N] [--min-jobs N] [--top N] [--status active\|all] [--export]` | Отчёт нераспознанных навыков: варианты слиты, число вакансий/доля/источники, вердикт (алиас/составной/похоже/шум/новый) |
 | `pnpm skills:promote -- --name X (--category CAT [--aliases a,b] \| --merge-into Y \| --drop) [--apply]` | Курация словаря: запись в `dictionary.ts` + БД; без `--apply` — dry-run |
 | `pnpm stats -- --skills React[,TypeScript] [--window 7\|30\|90] [--top N] [--include-unresolved]` | share=P(X\|S), lift, пробелы, глобальные частоты; навыки объединяются по ИЛИ |
+| `pnpm competition -- --skills React[,TypeScript] [--window N] [--limit N] [--export]` | Сигналы конкуренции: сколько откликнулось, темп, рекрутер, перцентиль к рынку (+ добор `apply_stats` по TTL) |
 | `pnpm export [-- --window N] [--include-unresolved]` | Снапшот JSON + CSV (аналитическое представление) |
 | `pnpm db:studio` | Prisma Studio — просмотр БД |
 
 Флаги скрейпера: `--pages` (default 5), `--vacancies` (default 5), `--list-ttl-days`
 (default 1), `--detail-ttl-days` (default 7), `--keywords <список|none>` (категории
 фильтра на один запуск), `--dry-run`.
+
+Флаги `competition`: `--job <ids>` (одна/несколько вакансий), `--skills <список>` (ИЛИ, как
+в `stats`), `--category`, `--window` (default 30), `--limit` (default 20, max 500),
+`--ttl-hours` (default 24), `--force`, `--no-fetch`, `--dry-run`, `--export`,
+`--sort opportunity|competition|fresh|applicants`. Подробнее: [specs/07-competition-signals.md](specs/07-competition-signals.md).
 
 `stats` и `export` по умолчанию считают только канонические навыки: неканонические
 (`isCanonical=false`) — сырьё для курации, они засоряют топы и пробелы. Вернуть их —
@@ -153,7 +167,8 @@ pnpm scrape -- --keywords React.js,Fullstack   # разовый оверрайд
   разброс интервалов маскирует скрейпер под нерегулярный трафик лучше фиксированной паузы;
 - экспоненциальный backoff на 429/403/5xx (10–160 с, до 5 попыток);
 - честный User-Agent с указанием бота (переопределяется `SCRAPE_USER_AGENT`);
-- `robots.txt` уважается: `/jobs/` разрешён, запрещённые пути не запрашиваются;
+- `robots.txt` уважается: `/jobs/` разрешён, запрещённые пути не запрашиваются; `/api/jobs/<id>/?apply_stats`
+  (`pnpm competition`) — не запрещён, но идёт с теми же паузами 3–8 с и backoff;
 - каждый запрос логируется в RunLog (`pagesFetched`, `requestsMade`, …).
 
 ## TTL-кэш
@@ -166,6 +181,37 @@ pnpm scrape -- --keywords React.js,Fullstack   # разовый оверрайд
   новее нашей копии — перекачиваем досрочно.
 - Сырой HTML сохраняется всегда (`cache/scrape/{list,detail}/`) — `pnpm parse` перечитывает
   его без повторных запросов.
+
+## Сигналы конкуренции
+
+Отвечает на «стоит ли подаваться» — сколько людей уже откликнулось и насколько жив рекрутер.
+**Без профиля пользователя**: сравниваются вакансии между собой, а не с вашим стеком.
+
+Два источника:
+
+- **Detail-страница, бесплатно** — разбивка `За 30 днів` (просмотры · отклики), `Активність
+  рекрутера` (4 уровня), `Відповідали …` с точным timestamp из tooltip. Заполняются обычным
+  `pnpm scrape` / `pnpm parse` (по кэшу — без сети).
+- **`GET /api/jobs/<id>/?apply_stats`** — публичный JSON без авторизации (то, что скрыто за
+  кнопкой «Огляд кандидатів»): `total_applicants` + распределения кандидатов по опыту,
+  English и зарплатным ожиданиям + топ-навыки конкурентов. Качается **только для шортлиста**
+  командой `pnpm competition`, с TTL 24 ч и обычными паузами 3–8 с.
+
+```bash
+pnpm competition -- --skills React,TypeScript --window 30 --limit 25  # шортлист + добор
+pnpm competition -- --job 834543                                      # карточка одной вакансии
+pnpm competition -- --window 90 --limit 100 --export                   # собрать рыночную базу
+pnpm competition -- --skills React --no-fetch --export                 # без сети
+```
+
+Выход: таблица с темпом откликов (`/день`), перцентилем к рынку, рекрутером и флагами
+(`low-competition`, `high-competition`, `fresh`, `responsive-recruiter`, `silent-recruiter`,
+`experienced-pool`, …) либо подробная карточка вакансии. Экспорт `--export` →
+`cache/analysis/competition-<date>[-skills].{json,csv}` (одна строка = вакансия).
+
+Перцентили и `opportunityScore` появляются, когда в БД ≥ 10 снапшотов (`pnpm competition`
+печатает `no-baseline` и подсказку, пока данных мало). Формулы метрик и флагов —
+[specs/07-competition-signals.md](specs/07-competition-signals.md).
 
 ## Извлечение навыков (четыре слоя)
 
@@ -209,10 +255,11 @@ pnpm extract:llm                 # полный проход (вакансии-�
 
 ## Два представления данных (решение 2026-10-24)
 
-1. **Приложение (Postgres/Prisma)**: `JobPosting`, `Skill`, `JobSkillRequirement`, `RunLog` —
-   нормализованные данные для будущего UI и матчинга.
+1. **Приложение (Postgres/Prisma)**: `JobPosting`, `Skill`, `JobSkillRequirement`,
+   `JobApplicantStats`, `RunLog` — нормализованные данные для будущего UI и матчинга.
 2. **Аналитика (файлы)**: `cache/analysis/snapshot-*.json` + long-format CSV — плоское
-   представление «вакансия × навык» для статистики, pandas, кластеризации, LLM-экспериментов.
+   представление «вакансия × навык» для статистики, pandas, кластеризации, LLM-экспериментов;
+   `competition-*.json/csv` — одна строка = вакансия со всеми сигналами конкуренции.
 
 Пользовательский профиль — НЕ в рыночной БД: привязка профиля к рынку будет отдельной
 надстройкой (MatchResult и др. — specs/05).

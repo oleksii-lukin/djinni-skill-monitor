@@ -12,6 +12,7 @@
 | [04-architecture.md](04-architecture.md) | High-level архитектура | Draft |
 | [05-data-model.md](05-data-model.md) | Модель данных (сущности) | Draft |
 | [06-skill-gap-analysis.md](06-skill-gap-analysis.md) | Анализ комбинаций навыков и дефицита (skill gap) | Draft |
+| [07-competition-signals.md](07-competition-signals.md) | Сигналы конкуренции: отклики, рекрутер, сравнение с рынком | Draft |
 | [design/](design/README.md) | Дизайн: промпты Stitch и макеты экранов (`design/ui-prompts.md`) | Draft |
 | [implementation/](implementation/) | Логи имплементации (ADR-подобные записи по завершении этапов) | — |
 
@@ -53,6 +54,19 @@
 - **Рыночная БД без `userId`**: профиль пользователя — отдельная надстройка (см. 0001).
 
 Подробности и обоснования: [implementation/0001-market-pipeline.md](implementation/0001-market-pipeline.md).
+
+## Ключевые решения (сигналы конкуренции, 2026-11-01)
+
+- **Сравнение вакансий между собой, без профиля**: абсолютные значения (отклики, темп,
+  активность рекрутера) + перцентиль относительно рынка. Профиль и матчинг — отдельный этап.
+- **`apply_stats` — он-деманд**: публичный JSON `/api/jobs/<id>/?apply_stats` (то, что скрыто
+  за кнопкой «Огляд кандидатів») качается только для шортлиста, с TTL 24 ч, а не при скрейпе.
+- **Detail-сигналы бесплатно**: разбивка `За 30 днів`, `Активність рекрутера`, дата ответа
+  из tooltip — из уже скачанного HTML через `pnpm parse`.
+- **Baseline — все вакансии с данными**, `n ≥ 10`; иначе только абсолютные значения.
+
+Подробности: [07-competition-signals.md](07-competition-signals.md),
+[implementation/0004-competition-signals.md](implementation/0004-competition-signals.md).
 
 ## TBD (обсудим позже)
 
