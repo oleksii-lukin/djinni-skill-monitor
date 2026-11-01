@@ -96,3 +96,67 @@ export function parseUkrainianDate(text: string): Date | null {
 export function cleanText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
+
+/**
+ * Активность рекрутера: «Активність рекрутера: Висока» → HIGH.
+ * djinni: Дуже висока / Висока / Середня / Низька; нераспознанное — UNKNOWN
+ * (новые вакансии блоком не показывают вовсе).
+ */
+export type RecruiterActivityValue = "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
+
+export function parseRecruiterActivity(text: string): RecruiterActivityValue {
+  const t = cleanText(text).toLowerCase();
+  if (/дуже\s+висок/.test(t)) return "VERY_HIGH";
+  if (/висок/.test(t)) return "HIGH";
+  if (/середн/.test(t)) return "MEDIUM";
+  if (/низьк/.test(t)) return "LOW";
+  return "UNKNOWN";
+}
+
+const UA_TZ = "Europe/Kyiv";
+
+/**
+ * Смещение таймзоны (мс) для момента `date` в зоне `timeZone`.
+ * Нужен для корректного преобразования локального времени djinni («16:29 14.10.2026»)
+ * в Date: летнее время в Киеве сдвигается дважды в год.
+ */
+function tzOffsetMs(date: Date, timeZone: string): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(
+    dtf.formatToParts(date).map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24, // Intl может отдавать 24 в полуночь
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  return asUtc - date.getTime();
+}
+
+/**
+ * Точная подпись djinni «16:29 14.10.2026» (tooltip у «Відповідали …») → Date.
+ * Интерпретируется как локальное время Europe/Kyiv. null при неверном формате.
+ */
+export function parseDjinniDateTime(raw: string): Date | null {
+  const m = raw.trim().match(/^(\d{1,2}):(\d{2})\s+(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!m) return null;
+  const [, hh, mm, day, month, year] = m;
+  const guess = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hh), Number(mm));
+  let result = new Date(guess - tzOffsetMs(new Date(guess), UA_TZ));
+  // На границе перевода времени смещение могло быть не тем — уточняем вторым проходом
+  const refined = guess - tzOffsetMs(result, UA_TZ);
+  if (refined !== result.getTime()) result = new Date(refined);
+  return result;
+}

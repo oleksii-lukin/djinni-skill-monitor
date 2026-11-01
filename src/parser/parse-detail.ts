@@ -5,13 +5,16 @@
 //     div.detail-rows__line → name (навык) + value («3 роки»);
 //     затем запятая-список доп. навыков + свёрнутый #more_skills_exp;
 // - «Вимоги до володіння мовами» → Англійська → «C1 – Просунутий»;
-// - #job-publication-info → «Опубліковано …», «Оновлено …», просмотры/отклики;
+// - #job-publication-info → «Опубліковано …», «Оновлено …», просмотры/отклики (всё время
+//     и за 30 дней), активность рекрутера и точный момент последнего ответа;
 // - sidebar: опыт («Виключно від 10 років досвіду»), формат, локация, домен.
 import * as cheerio from "cheerio";
 import {
   cleanText,
+  parseDjinniDateTime,
   parseEnglishLevel,
   parseExperienceYears,
+  parseRecruiterActivity,
   parseUkrainianDate,
   parseWorkFormat,
   parseYearsValue,
@@ -22,6 +25,17 @@ export interface StructuredSkill {
   name: string;
   yearsRequired: number | null;
   source: "DJINNI_STRUCTURED" | "DJINNI_EXTRA";
+}
+
+/** Значения из #job-publication-info: статистика просмотров/откликов + рекрутер. */
+export interface PublicationInfo {
+  viewsCount: number | null; // «За весь час: N переглядів» (или одиночная строка моложе 30 дней)
+  repliesCount: number | null;
+  views30d: number | null; // «За 30 днів: N переглядів» — null, если djinni разбивку не показывает
+  replies30d: number | null;
+  recruiterActivity: ReturnType<typeof parseRecruiterActivity>; // UNKNOWN, если блока нет
+  recruiterLastResponseAt: Date | null; // из tooltip «16:29 14.10.2026»
+  recruiterResponseLabel: string | null; // сырая подпись («Відповідали вчора»)
 }
 
 export interface ParsedDetail {
@@ -55,6 +69,11 @@ export interface ParsedDetail {
 
   viewsCount: number | null;
   repliesCount: number | null;
+  views30d: number | null;
+  replies30d: number | null;
+  recruiterActivity: ReturnType<typeof parseRecruiterActivity>;
+  recruiterLastResponseAt: Date | null;
+  recruiterResponseLabel: string | null;
 
   skills: StructuredSkill[];
   unresolvedSkillCount: number; // сколько djinni-имён не разрешились в словаре (заполняет extract)
@@ -109,18 +128,18 @@ export function parseDetailPage(html: string, pageUrl: string): ParsedDetail | n
   // Английский из блока «Вимоги до володіння мовами»
   const englishLevel = parseEnglishFromLanguages($);
 
-  // #job-publication-info: опубліковано/обновлено/просмотры/отклики.
+  // #job-publication-info: опубліковано/обновлено/просмотры/отклики/рекрутер.
   // Дата публикации: DOM «Опубліковано …» приоритетнее JSON-LD datePosted!
   // Проверено на кэше (236 страниц): у ~40% обновлённых вакансий Djinni
   // перезаписывает JSON-LD datePosted датой последнего обновления («Оновлено …»),
   // теряя исходную дату публикации. JSON-LD — только fallback (усечённый HTML).
-  const pubInfo = $("#job-publication-info").text();
+  const pubInfoText = $("#job-publication-info").text();
   const datePosted =
-    parseUkrainianDate(extractAfter(pubInfo, "Опубліковано") ?? "") ??
+    parseUkrainianDate(extractAfter(pubInfoText, "Опубліковано") ?? "") ??
     (typeof ld?.datePosted === "string" ? safeDate(ld.datePosted) : null);
-  const updatedRaw = extractAfter(pubInfo, "Оновлено");
+  const updatedRaw = extractAfter(pubInfoText, "Оновлено");
   const updatedAtDjinni = updatedRaw ? parseUkrainianDate(updatedRaw) : null;
-  const { viewsCount, repliesCount } = parseStats(pubInfo);
+  const pubInfo = parsePublicationInfo($);
 
   // Sidebar: опыт/формат/локация/домен
   const sidebar = $("aside").text();
@@ -169,8 +188,7 @@ export function parseDetailPage(html: string, pageUrl: string): ParsedDetail | n
     salaryMin: salary?.min ?? null,
     salaryMax: salary?.max ?? null,
     salaryCurrency: salary?.currency ?? null,
-    viewsCount,
-    repliesCount,
+    ...pubInfo,
     skills,
     unresolvedSkillCount: 0,
   };
@@ -270,16 +288,63 @@ function parseEnglishFromLanguages($: cheerio.CheerioAPI): ReturnType<typeof par
   return level;
 }
 
-function parseStats(pubInfo: string): { viewsCount: number | null; repliesCount: number | null } {
-  // «За весь час: 210 переглядів · 20 відгуків» (приоритет) или «55 переглядів · 4 відгуки».
-  // \S* вместо \w* — \w не понимает кириллицу («переглядів»).
-  const allTime = pubInfo.match(/За весь час:\s*(\d[\d\s]*)\s*перегляд\S*\s*·\s*(\d[\d\s]*)\s*відгук\S*/);
-  const m = allTime ?? pubInfo.match(/(\d[\d\s]*)\s*перегляд\S*\s*·\s*(\d[\d\s]*)\s*відгук\S*/);
-  if (!m) return { viewsCount: null, repliesCount: null };
+/**
+ * #job-publication-info → статистика просмотров/откликов и рекрутер.
+ * Две вёрстки (проверено на 246 страницах кэша):
+ * - старые вакансии: две строки с подписями «За 30 днів:» и «За весь час:»;
+ * - молодые: одна одиночная строка «N переглядів · M відгуків» — 30-дневной
+ *   разбивки нет (вакансия моложе 30 дней), значения идут в all-time поля.
+ */
+function parsePublicationInfo($: cheerio.CheerioAPI): PublicationInfo {
+  const text = $("#job-publication-info").text();
+
+  const d30 = text.match(/За 30 днів:\s*(\d[\d\s]*)\s*перегляд\S*\s*·\s*(\d[\d\s]*)\s*відгук\S*/);
+  const all = text.match(/За весь час:\s*(\d[\d\s]*)\s*перегляд\S*\s*·\s*(\d[\d\s]*)\s*відгук\S*/);
+  // Одиночная строка — только когда разбивки нет (иначе regex возьмёт первую из двух)
+  const single = !d30 && !all ? text.match(/(\d[\d\s]*)\s*перегляд\S*\s*·\s*(\d[\d\s]*)\s*відгук\S*/) : null;
+
   return {
-    viewsCount: parseCount(m[1]),
-    repliesCount: parseCount(m[2]),
+    viewsCount: all ? parseCount(all[1]) : single ? parseCount(single[1]) : null,
+    repliesCount: all ? parseCount(all[2]) : single ? parseCount(single[2]) : null,
+    views30d: d30 ? parseCount(d30[1]) : null,
+    replies30d: d30 ? parseCount(d30[2]) : null,
+    ...parseRecruiterBlock($),
   };
+}
+
+/**
+ * Активность рекрутера + «Відповідали …» внутри #job-publication-info.
+ * Тот же блок ответа дублируется у профиля рекрутера на странице — берём только
+ * первый вхождение, привязанное к публикации.
+ */
+function parseRecruiterBlock($: cheerio.CheerioAPI): Pick<
+  PublicationInfo,
+  "recruiterActivity" | "recruiterLastResponseAt" | "recruiterResponseLabel"
+> {
+  const info = $("#job-publication-info");
+  const text = info.text();
+
+  // Значения фиксированы djinni; ищем точную подпись после «Активність рекрутера:»,
+  // чтобы не зацепить соседний текст («Дуже висока» — два слова).
+  const act = text.match(/Активність рекрутера:\s*(Дуже висока|Висока|Середня|Низька)/);
+  const recruiterActivity: ReturnType<typeof parseRecruiterActivity> = act
+    ? parseRecruiterActivity(act[1])
+    : "UNKNOWN";
+
+  let recruiterResponseLabel: string | null = null;
+  let recruiterLastResponseAt: Date | null = null;
+  info.find('[data-bs-toggle="tooltip"]').each((_, el) => {
+    if (recruiterResponseLabel !== null) return;
+    const label = cleanText($(el).text());
+    // \b не используется: украинские буквы не ASCII-word-chars, граница не сработает
+    if (!/^Відповідали/.test(label)) return;
+    recruiterResponseLabel = label;
+    recruiterLastResponseAt = parseDjinniDateTime(
+      $(el).attr("title") ?? $(el).parent().attr("title") ?? "",
+    );
+  });
+
+  return { recruiterActivity, recruiterLastResponseAt, recruiterResponseLabel };
 }
 
 function parseCount(text: string): number | null {
