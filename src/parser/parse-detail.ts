@@ -226,12 +226,16 @@ function parseSkillsBlock($: cheerio.CheerioAPI): StructuredSkill[] {
           if (/^\+\s*ще\s*\d+/i.test(text)) return; // заглушка fold-toggle
           for (const part of text.split(",")) add(part, null, "DJINNI_EXTRA");
         });
-      // 3) свёрнутый блок more_skills_exp
+      // 3) свёрнутый блок more_skills_exp: строки detail-rows уже обработаны в шаге 1
+      //    (find спускается внутрь collapsed-блока), остаются legacy span-списки.
+      //    Строки name/value пропускаем: иначе годы («2 роки») утекут как навык.
       section
         .find("div#more_skills_exp span")
         .each((___, sp) => {
+          if ($(sp).closest("div.detail-rows").length > 0) return; // это name/value строк
           const text = cleanText($(sp).text());
           if (!text || text.length > 500) return;
+          if (/^\+\s*ще\s*\d+/i.test(text)) return; // заглушка fold-toggle
           for (const part of text.split(",")) add(part, null, "DJINNI_EXTRA");
         });
     }
