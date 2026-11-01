@@ -7,6 +7,8 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "seed:skills": "tsx src/skills/seed.ts",
+    "skills:unresolved": "tsx src/skills/report-unresolved.ts",
+    "skills:promote": "tsx src/skills/promote.ts",
     "scrape": "tsx src/scraper/run.ts",
     "parse": "tsx src/parser/run-parse.ts",
     "raw:sync": "tsx src/sync-raw.ts",

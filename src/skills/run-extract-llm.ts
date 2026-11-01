@@ -11,6 +11,7 @@ import { extractJobSkills } from "./extract.js";
 import { applyLlmSkills, llmExtractSkills, needsLlmExtraction } from "./llm-extract.js";
 import { updateJobFromDetail } from "../storage.js";
 import { createRawStore } from "../storage/raw-store.js";
+import { printUnresolvedHint } from "../scraper/scrape.js";
 import { RunTracker } from "../runlog.js";
 import { c, ce } from "../log.js";
 
@@ -66,6 +67,7 @@ async function main(): Promise<void> {
     console.log(`[llm] detail-страниц в проходе: ${c.bold(String(keys.length))} (без навыков до прохода: ${c.bold(String(zeroBefore))})`);
 
     const stats = { llmCalls: 0, llmSkills: 0, llmErrors: 0, inputTokens: 0, outputTokens: 0, noLlm: 0 };
+    const unresolvedSeen = new Set<string>(); // имена за прогон — для итоговой подсказки
     let llmBudget = Number.isFinite(llmLimit) ? llmLimit : Number.MAX_SAFE_INTEGER;
     let nextIdx = 0;
 
@@ -125,6 +127,7 @@ async function main(): Promise<void> {
         stats.outputTokens += outputTokens;
         tracker.countRequest();
         tracker.countSkillsLinked(llmResolved.length);
+        for (const n of unresolvedNames) unresolvedSeen.add(n);
 
         const names = llmResolved.map((r) => r.name).join(", ");
         const unresolved =
@@ -163,6 +166,7 @@ async function main(): Promise<void> {
     console.log(
       `[llm] вакансий без навыков: ${c.bold(String(zeroBefore))} → ${c.bold(c.green(String(zeroAfter)))}`,
     );
+    printUnresolvedHint(unresolvedSeen, "[llm]");
     await tracker.finish();
   } catch (err) {
     await tracker.finish(err);

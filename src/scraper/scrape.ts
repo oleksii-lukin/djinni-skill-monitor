@@ -265,6 +265,7 @@ async function scrapeDetails(
   opts: ScrapeRunOptions,
 ): Promise<void> {
   let refetched = 0;
+  const unresolvedSeen = new Set<string>(); // нераспознанные имена за прогон (для итоговой подсказки)
 
   for (const jobId of queue) {
     const job = await prisma.jobPosting.findUnique({ where: { id: jobId } });
@@ -314,6 +315,7 @@ async function scrapeDetails(
       });
       tracker.countSkillsLinked(resolved.length);
       if (unresolvedNames.length > 0) {
+        for (const n of unresolvedNames) unresolvedSeen.add(n);
         console.log(
           `[scrape] вакансия ${c.bold(String(jobId))}: ` +
             `${c.yellow("нераспознанные навыки")} ${c.dim("(кандидаты в словарь)")}: ` +
@@ -327,6 +329,7 @@ async function scrapeDetails(
   }
 
   tracker.countJobsRefetched(refetched);
+  printUnresolvedHint(unresolvedSeen, "[scrape]");
 }
 
 /**
@@ -352,6 +355,22 @@ export function printVacancySummary(
       `         навыков ${c.green(String(detail.skills.length))}` +
       `${skillNames ? c.green(` (${skillNames})`) : ""}, ` +
       `английский ${detail.englishLevel}, опыт ${c.bold(String(detail.experienceYears ?? "?"))} лет`,
+  );
+}
+
+/**
+ * Итоговая подсказка по нераспознанным навыкам прогона: печатается, если в сессии
+ * парсера встретились новые имена. Ведёт к отчёту/курации, а не к ручному логу.
+ */
+export function printUnresolvedHint(unresolvedSeen: Set<string>, label = "[scrape]"): void {
+  if (unresolvedSeen.size === 0) return;
+  const preview = [...unresolvedSeen].slice(0, 5).join(", ");
+  const more = unresolvedSeen.size > 5 ? ` и ещё ${unresolvedSeen.size - 5}` : "";
+  console.log(
+    `${label} нераспознанных имён за прогон: ${c.bold(String(unresolvedSeen.size))} — ${c.yellow(preview + more)}\n` +
+      `${label} отчёт по всем вакансиям: ${c.cyan("pnpm skills:unresolved")} ` +
+      `${c.dim("(--min-jobs 2 — только повторяющиеся; --window N — окно; --export — JSON/CSV)")}\n` +
+      `${label} курация: ${c.cyan("pnpm skills:promote -- --name \"…\" --category CAT [--apply]")}`,
   );
 }
 

@@ -4,11 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseListPage } from "./parse-list.js";
 import { parseDetailPage } from "./parse-detail.js";
-import { buildSkillLookup, SKILL_DICTIONARY } from "../skills/dictionary.js";
+import { buildSkillLookup, normalizeSkillKey, skillDictionaryWithCuratedAliases } from "../skills/dictionary.js";
 import { c, ce } from "../log.js";
 
 const RESEARCH_DIR = "cache/research";
 const lookup = buildSkillLookup();
+const DICTIONARY = skillDictionaryWithCuratedAliases();
 
 interface FixtureExpectation {
   file: string;
@@ -98,7 +99,7 @@ for (const exp of DETAIL_EXPECTATIONS) {
   if (detail.description) {
     const desc = detail.description.toLowerCase();
     const dictHits: string[] = [];
-    for (const entry of SKILL_DICTIONARY) {
+    for (const entry of DICTIONARY) {
       const terms = [entry.name, ...entry.aliases];
       if (terms.some((t) => t.length >= 3 && desc.includes(t.toLowerCase()))) dictHits.push(entry.name);
     }
@@ -110,7 +111,7 @@ for (const exp of DETAIL_EXPECTATIONS) {
 console.log("\n== Словарь ==");
 const names = new Set<string>();
 const dupes: string[] = [];
-for (const entry of SKILL_DICTIONARY) {
+for (const entry of DICTIONARY) {
   const key = entry.name.toLowerCase();
   if (names.has(key)) dupes.push(entry.name);
   names.add(key);
@@ -118,7 +119,7 @@ for (const entry of SKILL_DICTIONARY) {
 check("нет дублей canonical-имён", dupes.length === 0, `(дубли: ${dupes.join(", ")})`);
 
 // Словарные сопоставления на семплах
-const match = (raw: string): string | undefined => lookup.get(raw.toLowerCase())?.name;
+const match = (raw: string): string | undefined => lookup.get(normalizeSkillKey(raw))?.name;
 check("matchSkill('PostgreSQL')", match("PostgreSQL") === "PostgreSQL");
 check("matchSkill('postgres')", match("postgres") === "PostgreSQL");
 check("matchSkill('Spring Framework') → Spring", match("Spring Framework") === "Spring");

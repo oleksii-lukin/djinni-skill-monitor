@@ -1,7 +1,8 @@
 // Seed-таксономия навыков: canonical-имя + алиасы (EN/UA-формы djinni) + категория.
-// Курационный словарь: точные именаdjinni из cache/research + распространённые стеки.
+// Курационный словарь: точные имена djinni из cache/research + распространённые стеки.
 // Нераспознанные имена создаются в БД как Skill(isCanonical=false) и попадают в
-// отчёт `stats:unresolved` для ручного пополнения словаря.
+// отчёт `pnpm skills:unresolved` для курации; добавление/слияние — `pnpm skills:promote`
+// (пишет сюда в маркеры curated-блоков, см. CURATED_ALIASES / SKILL_DICTIONARY).
 import type { SkillCategory } from "@prisma/client";
 
 export interface SkillDictEntry {
@@ -196,15 +197,34 @@ export const SKILL_DICTIONARY: SkillDictEntry[] = [
   { name: "Power BI", category: "TOOL", aliases: [] },
   { name: "Tableau", category: "TOOL", aliases: [] },
   { name: "Excel", category: "TOOL", aliases: ["MS Excel", "Google Sheets"] },
+
+  // --- curated additions (skills:promote) ---
 ];
+
+/** Маркер вставки новых записей (skills:promote) — текст должен совпадать с комментарием выше. */
+export const CURATED_ADDITIONS_MARKER = "// --- curated additions (skills:promote) ---";
+
+/**
+ * Курированные алиасы к canonical-именам: пополняется `pnpm skills:promote --merge-into`
+ * (отдельным блоком, чтобы не редактировать строки SKILL_DICTIONARY вручную).
+ * Несколько строк с одним name объединяются при lookup/seed.
+ */
+export const CURATED_ALIASES: { name: string; aliases: string[] }[] = [
+  // --- curated aliases (skills:promote) ---
+  { name: "NestJS", aliases: ["Nest.js"] },
+];
+
+/** Маркер вставки курированных алиасов (skills:promote). */
+export const CURATED_ALIASES_MARKER = "// --- curated aliases (skills:promote) ---";
 
 /**
  * Построить карту нормализации: lowercase-алиас/имя → canonical-вход.
- * Конфликты: первый вхождение в словаре выигрывает (словарь курируется вручную).
+ * Учитывает SKILL_DICTIONARY + CURATED_ALIASES. Конфликты: первое вхождение
+ * в словаре выигрывает (словарь курируется вручную).
  */
 export function buildSkillLookup(): Map<string, SkillDictEntry> {
   const lookup = new Map<string, SkillDictEntry>();
-  for (const entry of SKILL_DICTIONARY) {
+  for (const entry of skillDictionaryWithCuratedAliases()) {
     const keys = [entry.name, ...entry.aliases].map((k) => normalizeSkillKey(k));
     for (const key of keys) {
       if (!key) continue;
@@ -212,6 +232,23 @@ export function buildSkillLookup(): Map<string, SkillDictEntry> {
     }
   }
   return lookup;
+}
+
+/**
+ * Словарь с применёнными курированными алиасами (seed и проверки работают с ним,
+ * чтобы CURATED_ALIASES не терялись при pnpm seed:skills).
+ */
+export function skillDictionaryWithCuratedAliases(): SkillDictEntry[] {
+  return SKILL_DICTIONARY.map((entry) => {
+    const extra = curatedAliasesFor(entry.name).filter((a) => !entry.aliases.includes(a));
+    return extra.length > 0 ? { ...entry, aliases: [...entry.aliases, ...extra] } : entry;
+  });
+}
+
+/** Алиасы из CURATED_ALIASES, относящиеся к canonical-имени (все строки блока). */
+export function curatedAliasesFor(name: string): string[] {
+  const keys = name.toLowerCase();
+  return CURATED_ALIASES.filter((c) => c.name.toLowerCase() === keys).flatMap((c) => c.aliases);
 }
 
 /** Нормализация имени для сопоставления: lowercase, без лишних пробелов/точек на конце. */

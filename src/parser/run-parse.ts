@@ -6,7 +6,7 @@ import { parseDetailPage } from "./parse-detail.js";
 import { extractJobSkills } from "../skills/extract.js";
 import { updateJobFromDetail } from "../storage.js";
 import { createRawStore } from "../storage/raw-store.js";
-import { printVacancySummary } from "../scraper/scrape.js";
+import { printVacancySummary, printUnresolvedHint } from "../scraper/scrape.js";
 import { RunTracker } from "../runlog.js";
 import { c, ce } from "../log.js";
 
@@ -18,6 +18,7 @@ async function main(): Promise<void> {
     console.log(`[parse] найдено ${c.bold(String(keys.length))} кэшированных detail-страниц в ${c.cyan(`RAW_STORE=${process.env.RAW_STORE ?? "db"}`)}`);
 
     let skillsTotal = 0;
+    const unresolvedSeen = new Set<string>(); // имена за прогон — для итоговой подсказки
     for (const key of keys) {
       const jobId = Number.parseInt(key, 10);
       if (Number.isNaN(jobId)) continue;
@@ -46,6 +47,7 @@ async function main(): Promise<void> {
       skillsTotal += resolved.length;
       tracker.countSkillsLinked(resolved.length);
       if (unresolvedNames.length > 0) {
+        for (const n of unresolvedNames) unresolvedSeen.add(n);
         console.log(
           `[parse] ${c.bold(String(jobId))}: ${c.yellow("нераспознаны")}: ` +
             c.yellow(unresolvedNames.join(", ")),
@@ -57,6 +59,7 @@ async function main(): Promise<void> {
       `[parse] готово: ${c.bold(String(keys.length))} вакансий, ` +
         `${c.bold(String(skillsTotal))} связей навыков`,
     );
+    printUnresolvedHint(unresolvedSeen, "[parse]");
     await tracker.finish();
   } catch (err) {
     await tracker.finish(err);
