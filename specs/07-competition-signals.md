@@ -31,8 +31,16 @@
 - **В `JobPosting`** (из detail-страницы): `views30d`, `replies30d`, `recruiterActivity`
   (enum VERY_HIGH/HIGH/MEDIUM/LOW/UNKNOWN), `recruiterLastResponseAt`, `recruiterResponseLabel`.
 - **`JobApplicantStats`** — 1:1 с вакансией, последний снапшот `apply_stats`: скаляр
-  `totalApplicants`, четыре JSON-массива как есть, `rawJson` (аудит/перепарсинг), `fetchedAt`.
+  `totalApplicants`, четыре JSON-массива как есть, `rawJson` (аудит), `fetchedAt`.
   История не хранится — только последний снимок; TTL `COMPETITION_TTL_HOURS` (default 24 ч).
+
+Сырые данные и перепарсинг. У detail-страниц сырые HTML живут в `RawHtmlStore`
+(`RAW_STORE=db|fs`) и `pnpm parse` перечитывает их без сети. У `apply_stats` такой схемы
+нет: снапшот пишется напрямую в `JobApplicantStats`, а `rawJson` — **только аудит**,
+команды перепарсинга из него не существует. Правки нормализаторов меток (`experienceBucket`,
+`salaryRange`, `englishRank`) на уже собранных снапшотах применяются только при следующем
+доборе — тогда JSON перечитывается из сети. Перепарсинг `rawJson` — отдельная задача
+(~30 строк: читать колонку, гонять через `parseApplicantStats`, обновлять строки).
 
 Схема: [05-data-model.md](05-data-model.md).
 
@@ -130,5 +138,7 @@ pnpm competition -- --skills React --no-fetch --export                 # тол�
 
 - Профиль пользователя и матчинг (specs/01 FR-9–12, 05 Profile/MatchResult).
 - История снапшотов → тренды конкуренции.
+- `pnpm competition:reparse` — пересчёт метрик из колонки `rawJson` без сети (сейчас
+  `rawJson` только аудит; см. §3 и ADR 0004).
 - Срез baseline по категории/уровню/бренду компании.
 - Публикация сигналов в вебе/боте (specs/04).

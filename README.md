@@ -197,6 +197,11 @@ pnpm scrape -- --keywords React.js,Fullstack   # разовый оверрайд
   English и зарплатным ожиданиям + топ-навыки конкурентов. Качается **только для шортлиста**
   командой `pnpm competition`, с TTL 24 ч и обычными паузами 3–8 с.
 
+У detail-страниц сырые HTML лежат в `RawHtmlStore` (`RAW_STORE=db|fs`) и `pnpm parse`
+перечитывает их без сети. У JSON-снапшотов такой схемы нет: сырой ответ сохраняется в
+колонке `JobApplicantStats.rawJson`, но только как аудит-след — команды перепарсинга из
+него не существует, поэтому правки нормализаторов применяются при следующем доборе из сети.
+
 ```bash
 pnpm competition -- --skills React,TypeScript --window 30 --limit 25  # шортлист + добор
 pnpm competition -- --job 834543                                      # карточка одной вакансии

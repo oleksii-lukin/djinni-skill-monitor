@@ -157,7 +157,11 @@ model JobApplicantStats {
   salaryDist      Json // [{ label, count, percent }]
   englishDist     Json // [{ label, count, percent }]
   topSkills       Json // [{ name, count, canonicalName? }]
-  rawJson         String   @db.Text // сырой ответ API (аудит/перепарсинг)
+  // Сырой ответ API — только аудит (можно руками посмотреть, что вернул djinni).
+  // Перепарсинга из rawJson НЕТ, в отличие от HTML-кэша (pnpm parse): правки
+  // нормализаторов меток требуют повторного добра с сетью. Команды вида
+  // pnpm competition:reparse пока не существует.
+  rawJson         String   @db.Text
   fetchedAt       DateTime @default(now())
 
   job JobPosting @relation(fields: [jobId], references: [id], onDelete: Cascade)
